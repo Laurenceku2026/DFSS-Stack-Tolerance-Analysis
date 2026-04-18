@@ -426,7 +426,6 @@ def activate_license(report_key):
     return False, 0, None, None
 
 def consume_usage(report_key):
-    """只在模拟时消耗次数，下载报告不消耗"""
     if st.session_state.get("admin_logged_in", False):
         return True
     if not report_key:
@@ -455,13 +454,11 @@ def get_remaining_info(report_key):
     return str(st.session_state.trial_uses_left), ("试用剩余次数" if st.session_state.lang=="zh" else "Trial left")
 
 def is_premium_user(report_key):
-    """检查是否已付费（付费用户或试用期用户），用于下载报告权限"""
     if st.session_state.get("admin_logged_in", False):
         return True
     if report_key:
         valid, _, _, _ = activate_license(report_key)
         return valid
-    # 试用期用户也可以下载报告（不消耗次数）
     return st.session_state.trial_uses_left > 0
 
 # ==================== 支付链接配置 ====================
@@ -494,25 +491,24 @@ PAYMENT_LINKS = {
 
 PLAN_MAPPING = {
     "single": "single",
-    "50": "50",
+    "100": "50",
     "1000": "1000"
 }
 
-# ==================== 管理员登录验证 ====================
 ADMIN_USERNAME = "Laurence_ku"
 ADMIN_PASSWORD = "Ku_product$2026"
 
 # ==================== 支付回调处理（修复语言保持） ====================
 def handle_payment_callback():
     params = st.query_params
-    # 恢复语言：优先从 URL 参数获取，否则从 pending_lang 获取
+    # 恢复语言：优先从 URL 获取，否则从 pending_lang 获取（不清除 pending_lang，留给弹窗使用）
     if "lang" in params:
         lang_param = params["lang"]
         if lang_param in ["zh", "en"]:
             st.session_state.lang = lang_param
     elif st.session_state.get("pending_lang") is not None:
         st.session_state.lang = st.session_state.pending_lang
-        st.session_state.pending_lang = None  # 清除
+        # 注意：这里不清除 pending_lang，让弹窗还能使用
     # 处理支付成功
     if "order_success" in params and "plan" in params:
         plan_key = params["plan"]
@@ -534,12 +530,13 @@ def handle_payment_callback():
             st.error("无效的套餐类型。" if st.session_state.lang=="zh" else "Invalid plan type.")
             st.query_params.clear()
 
-# ==================== 支付成功弹窗（手动语言） ====================
+# ==================== 支付成功弹窗（优先使用 pending_lang） ====================
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
         @st.dialog(" ")
         def payment_success_dialog():
-            lang = st.session_state.lang
+            # 优先使用 pending_lang（购买前的语言），若为 None 则使用当前 lang
+            lang = st.session_state.get("pending_lang") or st.session_state.lang
             if lang == "zh":
                 st.markdown("### ✅ 支付成功")
                 st.markdown("您的授权码已生成")
@@ -554,10 +551,11 @@ def show_payment_success_dialog():
             if st.button("确定" if lang == "zh" else "OK"):
                 st.session_state.show_payment_dialog = False
                 st.session_state.payment_new_key = ""
+                st.session_state.pending_lang = None  # 清除 pending_lang
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框（手动语言，并附加语言参数） ====================
+# ==================== 购买对话框 ====================
 @st.dialog(" ")
 def purchase_dialog():
     lang = st.session_state.lang
@@ -585,7 +583,6 @@ def purchase_dialog():
         st.markdown("#### 💳 Card / Digital Wallet Payment (Stripe)")
     
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         url = PAYMENT_LINKS["single"]["url"]
         if "?" in url:
@@ -596,7 +593,6 @@ def purchase_dialog():
         price = PAYMENT_LINKS["single"]["price_usd"]
         button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🎟️ {name} ${price}</a>'
         st.markdown(button_html, unsafe_allow_html=True)
-    
     with col2:
         url = PAYMENT_LINKS["50"]["url"]
         if "?" in url:
@@ -607,7 +603,6 @@ def purchase_dialog():
         price = PAYMENT_LINKS["50"]["price_usd"]
         button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">📦 {name} ${price}</a>'
         st.markdown(button_html, unsafe_allow_html=True)
-    
     with col3:
         url = PAYMENT_LINKS["1000"]["url"]
         if "?" in url:
@@ -1277,7 +1272,7 @@ def main():
         if not is_premium_user(st.session_state.current_report_key):
             st.warning(t("trial_warning").format(st.session_state.trial_uses_left))
 
-        # 购买按钮：点击时记录当前语言
+        # 购买按钮：记录当前语言到 pending_lang
         if st.button(t("purchase_button"), key="purchase_btn", use_container_width=True):
             st.session_state.pending_lang = st.session_state.lang
             purchase_dialog()
@@ -1286,7 +1281,7 @@ def main():
         st.markdown(f"**{t('contact')}**")
         st.markdown(t("email"))
 
-    # 参数输入表格
+    # 参数输入表格（保持原样）
     st.markdown(f'<div class="section-header">{t("param_input")}</div>', unsafe_allow_html=True)
     header_cols = st.columns([0.3, 1.5, 1, 1, 1.2, 0.3])
     header_cols[0].markdown(f"**{t('letter')}**")
@@ -1510,7 +1505,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></table>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
