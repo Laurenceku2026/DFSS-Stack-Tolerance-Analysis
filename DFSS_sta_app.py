@@ -462,10 +462,10 @@ def is_premium_user(report_key):
     # 试用期用户也可以下载报告（不消耗次数）
     return st.session_state.trial_uses_left > 0
 
-# ==================== 支付链接配置 ====================
+# ==================== 支付链接配置（请替换为您的实际 Stripe Payment Link URL） ====================
 PAYMENT_LINKS = {
     "single": {
-        "url": "https://buy.stripe.com/test_7sY8wPcYJ5Qu898cjO6Vq00",
+        "url": "https://buy.stripe.com/test_7sY8wPcYJ5Qu898cjO6Vq00",  # 替换为您的单次通行 Payment Link
         "name_zh": "单次通行",
         "name_en": "Single Pass",
         "price_usd": 3,
@@ -473,7 +473,7 @@ PAYMENT_LINKS = {
         "months": 9999
     },
     "50": {
-        "url": "https://buy.stripe.com/test_cNi3cv1g1a6KfBA6Zu6Vq01",
+        "url": "https://buy.stripe.com/test_cNi3cv1g1a6KfBA6Zu6Vq01",  # 替换为您的50次套餐 Payment Link
         "name_zh": "50次套餐",
         "name_en": "50 Credits",
         "price_usd": 30,
@@ -481,7 +481,7 @@ PAYMENT_LINKS = {
         "months": 1
     },
     "1000": {
-        "url": "https://buy.stripe.com/test_00wfZh6Alen0ahg2Je6Vq02",
+        "url": "https://buy.stripe.com/test_00wfZh6Alen0ahg2Je6Vq02",  # 替换为您的1000次套餐 Payment Link
         "name_zh": "1000次套餐",
         "name_en": "1000 Credits",
         "price_usd": 200,
@@ -490,10 +490,10 @@ PAYMENT_LINKS = {
     }
 }
 
-# 映射跳转URL中的plan参数到内部键
+# 映射跳转URL中的plan参数到内部键（根据您的实际跳转参数调整）
 PLAN_MAPPING = {
     "single": "single",
-    "50": "50",      # 50次套餐跳转时使用 plan=100
+    "100": "50",      # 50次套餐跳转时使用 plan=100
     "1000": "1000"
 }
 
@@ -506,7 +506,6 @@ def handle_payment_callback():
     params = st.query_params
     if "order_success" in params and "plan" in params:
         plan_key = params["plan"]
-        # 将外部plan映射到内部键
         internal_plan = PLAN_MAPPING.get(plan_key)
         if internal_plan and internal_plan in PAYMENT_LINKS:
             uses = PAYMENT_LINKS[internal_plan]["uses"]
@@ -527,9 +526,8 @@ def handle_payment_callback():
 
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
-        @st.dialog(t("payment_success_title") if st.session_state.lang=="zh" else "✅ Payment Successful")
+        @st.dialog(t("payment_success_title"), width="small")
         def payment_success_dialog():
-            lang = st.session_state.lang
             st.markdown(f"### {t('payment_success_msg')}")
             st.code(st.session_state.payment_new_key, language="text")
             st.caption(t("payment_save_key"))
@@ -540,7 +538,7 @@ def show_payment_success_dialog():
         payment_success_dialog()
 
 # ==================== 购买对话框 ====================
-@st.dialog("购买授权码", width="large")
+@st.dialog(t("purchase_dialog_title"), width="large")
 def purchase_dialog():
     lang = st.session_state.lang
     if lang == "zh":
@@ -684,7 +682,7 @@ def admin_settings_dialog():
         else:
             st.warning(t("no_keys"))
 
-# ==================== 蒙特卡洛模拟核心函数 ====================
+# ==================== 蒙特卡洛模拟核心函数（保持不变） ====================
 def update_param_letters():
     letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
     st.session_state.param_letters = {
@@ -1098,6 +1096,7 @@ def main():
     handle_payment_callback()
     show_payment_success_dialog()
 
+    # 自定义 CSS（齿轮按钮透明、购买按钮红底白字）
     st.markdown("""
     <style>
         html, body, .stApp, .stMarkdown, .stText, .stNumberInput, .stSelectbox, .stTextArea, .stDataFrame, .stMetric {
@@ -1122,7 +1121,6 @@ def main():
         }
         button[data-testid="baseButton-primary"]:hover { background-color: #c82333 !important; }
         button[data-testid="baseButton-primary"] * { white-space: pre-line !important; }
-        /* 辅助按钮样式 */
         .stButton > button:not([data-testid="baseButton-primary"]) {
             background-color: #3498db !important;
             color: white !important;
@@ -1130,7 +1128,6 @@ def main():
             border-radius: 5px;
         }
         .stButton > button:not([data-testid="baseButton-primary"]):hover { background-color: #2980b9 !important; }
-        /* 语言按钮包装样式 */
         .lang-btn-wrap .stButton button {
             background-color: #dc3545 !important;
             color: white !important;
@@ -1138,7 +1135,7 @@ def main():
             border-radius: 5px;
         }
         .lang-btn-wrap .stButton button:hover { background-color: #c82333 !important; }
-        /* 齿轮按钮单独样式：透明背景，灰色文字，无边框 */
+        /* 齿轮按钮透明无背景 */
         .gear-btn button {
             background-color: transparent !important;
             color: #555 !important;
@@ -1151,7 +1148,7 @@ def main():
             background-color: transparent !important;
             color: #000 !important;
         }
-        /* 侧边栏购买授权码按钮红底白字 */
+        /* 侧边栏购买按钮红底白字 */
         section[data-testid="stSidebar"] .stButton button[key="purchase_btn"] {
             background-color: #dc3545 !important;
             color: white !important;
@@ -1172,7 +1169,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # 右上角：语言切换 + 齿轮（调整列宽使按钮右对齐且平齐）
+    # 右上角语言切换 + 齿轮按钮（平齐）
     col_left, col_spacer, col_zh, col_en, col_gear = st.columns([0.5, 0.2, 0.15, 0.15, 0.08])
     with col_zh:
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
@@ -1252,7 +1249,7 @@ def main():
         st.markdown(f"**{t('contact')}**")
         st.markdown(t("email"))
 
-    # ==================== 参数输入表格 ====================
+    # ==================== 参数输入表格（与原代码相同） ====================
     st.markdown(f'<div class="section-header">{t("param_input")}</div>', unsafe_allow_html=True)
     header_cols = st.columns([0.3, 1.5, 1, 1, 1.2, 0.3])
     header_cols[0].markdown(f"**{t('letter')}**")
@@ -1389,12 +1386,12 @@ def main():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button(t("start_sim"), type="primary", use_container_width=True):
-            # 检查是否有权限（付费用户或试用次数>0）
+            # 授权检查
             if not is_premium_user(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
                 st.stop()
-            # 消耗次数（只有这里消耗，下载报告不消耗）
+            # 消耗次数
             if not consume_usage(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
@@ -1478,7 +1475,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
