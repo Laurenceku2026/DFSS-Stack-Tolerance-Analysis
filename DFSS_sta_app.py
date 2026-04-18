@@ -9,7 +9,7 @@ import re
 import base64
 from io import BytesIO
 from typing import List, Dict, Any, Tuple, Optional
-from datetime import datetime, timedelta   # 添加 timedelta
+from datetime import datetime, timedelta  # 修复 timedelta 缺失
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -315,6 +315,46 @@ TEXTS = {
     }
 }
 
+# ==================== 初始化 Session State ====================
+if "lang" not in st.session_state:
+    st.session_state.lang = "zh"
+if "admin_logged_in" not in st.session_state:
+    st.session_state.admin_logged_in = False
+if "analyst_name" not in st.session_state:
+    st.session_state.analyst_name = ""
+if "analyst_title" not in st.session_state:
+    st.session_state.analyst_title = ""
+if "current_report_key" not in st.session_state:
+    st.session_state.current_report_key = ""
+if "trial_uses_left" not in st.session_state:
+    st.session_state.trial_uses_left = 3
+if "sim_results_raw" not in st.session_state:
+    st.session_state.sim_results_raw = None
+if "formula" not in st.session_state:
+    st.session_state.formula = "A * E * 7 / 1000 * 60 / (B + C + D)"
+if "output_name" not in st.session_state:
+    st.session_state.output_name = "Runtime"
+if "usl_str" not in st.session_state:
+    st.session_state.usl_str = "40.0"
+if "lsl_str" not in st.session_state:
+    st.session_state.lsl_str = "30.0"
+if "params" not in st.session_state:
+    st.session_state.params = pd.DataFrame({
+        "参数名称": ["Cell Cap", "Suction P", "Brush P", "Other(Pump+display)", "V"],
+        "均值(Typ)": [2450.0, 70.0, 30.0, 15.0, 3.6],
+        "标准差(Std)": [20.74, 0.77, 0.90, 0.45, 0.0036],
+        "分布": ["正态分布（完整）" for _ in range(5)],
+        "分布参数": [{} for _ in range(5)]
+    })
+if "show_payment_dialog" not in st.session_state:
+    st.session_state.show_payment_dialog = False
+if "payment_new_key" not in st.session_state:
+    st.session_state.payment_new_key = ""
+
+# ==================== 辅助函数 ====================
+def t(key):
+    return TEXTS[st.session_state.lang].get(key, key)
+
 # ==================== 授权与试用数据管理 ====================
 USAGE_FILE = "usage_data.json"
 
@@ -422,7 +462,6 @@ def is_premium_user(report_key):
     return False
 
 # ==================== 支付链接配置（请替换为您的实际 Stripe Payment Link URL） ====================
-# 根据提供的 product ID 在 Stripe 后台创建 Payment Link 后，将生成的链接填入下方
 PAYMENT_LINKS = {
     "single": {
         "url": "https://buy.stripe.com/your_single_pass_link",   # 替换为单次通行 Payment Link
@@ -478,7 +517,7 @@ def handle_payment_callback():
 
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
-        @st.dialog(t("payment_success_title") if st.session_state.lang=="zh" else "✅ Payment Successful")
+        @st.experimental_dialog(t("payment_success_title") if st.session_state.lang=="zh" else "✅ Payment Successful")
         def payment_success_dialog():
             lang = st.session_state.lang
             st.markdown(f"### {t('payment_success_msg')}")
@@ -490,8 +529,8 @@ def show_payment_success_dialog():
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框 ====================
-@st.dialog(t("purchase_dialog_title"), width="large")
+# ==================== 购买对话框（使用 st.experimental_dialog 兼容旧版） ====================
+@st.experimental_dialog("购买授权码", width="large")  # 固定标题，避免动态调用 t()
 def purchase_dialog():
     lang = st.session_state.lang
     if lang == "zh":
@@ -540,7 +579,7 @@ def purchase_dialog():
     st.markdown(t("payment_note"))
 
 # ==================== 管理员设置弹窗 ====================
-@st.dialog(t("admin_settings"), width="large")
+@st.experimental_dialog(t("admin_settings"), width="large")
 def admin_settings_dialog():
     lang = st.session_state.lang
     st.subheader(t("admin_login"))
@@ -635,46 +674,7 @@ def admin_settings_dialog():
         else:
             st.warning(t("no_keys"))
 
-# ==================== 初始化 Session State ====================
-if "lang" not in st.session_state:
-    st.session_state.lang = "zh"
-if "admin_logged_in" not in st.session_state:
-    st.session_state.admin_logged_in = False
-if "analyst_name" not in st.session_state:
-    st.session_state.analyst_name = ""
-if "analyst_title" not in st.session_state:
-    st.session_state.analyst_title = ""
-if "current_report_key" not in st.session_state:
-    st.session_state.current_report_key = ""
-if "trial_uses_left" not in st.session_state:
-    st.session_state.trial_uses_left = 3
-if "sim_results_raw" not in st.session_state:
-    st.session_state.sim_results_raw = None
-if "formula" not in st.session_state:
-    st.session_state.formula = "A * E * 7 / 1000 * 60 / (B + C + D)"
-if "output_name" not in st.session_state:
-    st.session_state.output_name = "Runtime"
-if "usl_str" not in st.session_state:
-    st.session_state.usl_str = "40.0"
-if "lsl_str" not in st.session_state:
-    st.session_state.lsl_str = "30.0"
-if "params" not in st.session_state:
-    st.session_state.params = pd.DataFrame({
-        "参数名称": ["Cell Cap", "Suction P", "Brush P", "Other(Pump+display)", "V"],
-        "均值(Typ)": [2450.0, 70.0, 30.0, 15.0, 3.6],
-        "标准差(Std)": [20.74, 0.77, 0.90, 0.45, 0.0036],
-        "分布": ["正态分布（完整）" for _ in range(5)],
-        "分布参数": [{} for _ in range(5)]
-    })
-if "show_payment_dialog" not in st.session_state:
-    st.session_state.show_payment_dialog = False
-if "payment_new_key" not in st.session_state:
-    st.session_state.payment_new_key = ""
-
-# ==================== 辅助函数 ====================
-def t(key):
-    return TEXTS[st.session_state.lang].get(key, key)
-
+# ==================== 以下为原始蒙特卡洛模拟代码（未改动，仅为了完整性保留） ====================
 def update_param_letters():
     letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
     st.session_state.param_letters = {
