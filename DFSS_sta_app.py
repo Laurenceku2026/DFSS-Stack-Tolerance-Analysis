@@ -566,7 +566,7 @@ def purchase_dialog():
         if st.button("🎟️ " + (t("plan_single") + " $3"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card", "alipay"],
+                    payment_method_types=["card"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -595,7 +595,7 @@ def purchase_dialog():
         if st.button("📦 " + (t("plan_50") + " $30"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card", "alipay"],
+                    payment_method_types=["card"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -624,7 +624,7 @@ def purchase_dialog():
         if st.button("🚀 " + (t("plan_1000") + " $200"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card", "alipay"],
+                    payment_method_types=["card"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
