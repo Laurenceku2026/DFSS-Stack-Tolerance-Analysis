@@ -1,4 +1,4 @@
-# app.py - 最终修复版（支付后语言保持）
+# app.py - 最终修复版（支付后语言保持 + metadata 区分应用）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -530,7 +530,7 @@ def show_payment_success_dialog():
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框（success_url 携带语言参数） ====================
+# ==================== 购买对话框（success_url 携带语言参数，并添加 metadata 区分应用） ====================
 @st.dialog(t("purchase_dialog_title"), width="large")
 def purchase_dialog():
     lang = st.session_state.lang
@@ -578,6 +578,11 @@ def purchase_dialog():
                     mode="payment",
                     success_url=f"{base_url}/?order_success=1&plan=single&lang={lang}",
                     cancel_url=f"{base_url}/",
+                    metadata={
+                        "app_name": "DFSS",
+                        "app_version": "1.0",
+                        "plan": "single"
+                    }
                 )
                 st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
                 button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
@@ -602,6 +607,11 @@ def purchase_dialog():
                     mode="payment",
                     success_url=f"{base_url}/?order_success=1&plan=50&lang={lang}",
                     cancel_url=f"{base_url}/",
+                    metadata={
+                        "app_name": "DFSS",
+                        "app_version": "1.0",
+                        "plan": "50"
+                    }
                 )
                 st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
                 button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
@@ -626,6 +636,11 @@ def purchase_dialog():
                     mode="payment",
                     success_url=f"{base_url}/?order_success=1&plan=1000&lang={lang}",
                     cancel_url=f"{base_url}/",
+                    metadata={
+                        "app_name": "DFSS",
+                        "app_version": "1.0",
+                        "plan": "1000"
+                    }
                 )
                 st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
                 button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
@@ -736,18 +751,7 @@ def admin_settings_dialog():
         else:
             st.warning(t("no_keys"))
 
-# ==================== 蒙特卡洛模拟核心函数（保持不变，为节省篇幅省略，实际运行时请保留完整代码） ====================
-# 注意：以下函数与之前完全一致，此处为保持完整性，实际应包含所有蒙特卡洛模拟相关函数
-# 由于篇幅限制，这里仅作示意，实际部署时请使用包含完整函数的代码。
-# 为避免遗漏，建议您直接使用我提供的完整代码文件（可通过消息发送）。
-# 为满足消息长度限制，此处省略了蒙特卡洛模拟函数（update_param_letters, parse_limit, clean_formula, ... 等），
-# 您可以从之前的版本中复制这些函数，或者直接使用我下面提供的完整代码文件（已包含所有函数）。
-# 鉴于您已经拥有完整代码，我会在最终答案中提供所有函数的完整版本。
-
-# 为了确保代码完整性，以下包含所有蒙特卡洛模拟函数（您之前已有，此处不再重复）
-# ...（请从之前的完整代码中复制所有蒙特卡洛模拟函数，包括 plot_histogram, plot_contribution_horizontal, compute_cpk_ppm, generate_word_report 等）
-# 由于消息长度限制，我无法在此处重复粘贴所有函数，但您可以放心，最终交付的代码文件是完整的。
-
+# ==================== 蒙特卡洛模拟核心函数 ====================
 def update_param_letters():
     letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
     st.session_state.param_letters = {
@@ -1535,7 +1539,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
