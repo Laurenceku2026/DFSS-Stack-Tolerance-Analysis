@@ -525,7 +525,7 @@ def show_payment_success_dialog():
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框（使用 Stripe Checkout Session） ====================
+# ==================== 购买对话框（使用 Stripe Checkout Session，修复 WeChat Pay 错误） ====================
 @st.dialog(t("purchase_dialog_title"), width="large")
 def purchase_dialog():
     lang = st.session_state.lang
@@ -560,7 +560,7 @@ def purchase_dialog():
         if st.button("🎟️ " + (t("plan_single") + " $3"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card", "wechat_pay", "alipay"],
+                    payment_method_types=["card", "alipay"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -584,7 +584,7 @@ def purchase_dialog():
         if st.button("📦 " + (t("plan_50") + " $30"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card", "wechat_pay", "alipay"],
+                    payment_method_types=["card", "alipay"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -608,7 +608,7 @@ def purchase_dialog():
         if st.button("🚀 " + (t("plan_1000") + " $200"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card", "wechat_pay", "alipay"],
+                    payment_method_types=["card", "alipay"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -629,10 +629,10 @@ def purchase_dialog():
     
     if lang == "zh":
         st.markdown("#### 🇨🇳 国内支付（微信 / 支付宝）")
-        st.info("支持信用卡、微信支付和支付宝。支付成功后会自动跳回本页面，授权码将自动激活。")
+        st.info("支持信用卡、支付宝。支付成功后会自动跳回本页面，授权码将自动激活。")
     else:
-        st.markdown("#### 🇨🇳 Domestic Payment (WeChat Pay / Alipay)")
-        st.info("Supports credit cards, WeChat Pay and Alipay. You will be redirected back after payment, and the license key will be auto-activated.")
+        st.markdown("#### 🇨🇳 Domestic Payment (Alipay)")
+        st.info("Supports credit cards and Alipay. You will be redirected back after payment, and the license key will be auto-activated.")
 
 # ==================== 管理员设置弹窗 ====================
 @st.dialog(t("admin_settings"), width="large")
@@ -1518,7 +1518,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
