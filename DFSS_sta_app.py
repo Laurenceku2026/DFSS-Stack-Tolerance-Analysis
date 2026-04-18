@@ -525,10 +525,8 @@ def handle_payment_callback():
 
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
-        # 使用空标题，内部动态设置
-        @st.dialog("")
+        @st.dialog(" ")  # 空格占位符，避免空字符串错误
         def payment_success_dialog():
-            # 动态显示标题
             st.markdown(f"### {t('payment_success_title')}")
             st.markdown(f"{t('payment_success_msg')}")
             st.code(st.session_state.payment_new_key, language="text")
@@ -539,11 +537,9 @@ def show_payment_success_dialog():
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框 ====================
-@st.dialog("")
+@st.dialog(" ")  # 空格占位符
 def purchase_dialog():
     lang = st.session_state.lang
-    # 动态标题
     st.markdown(f"### {t('purchase_dialog_title')}")
     if lang == "zh":
         st.markdown("### 选择套餐")
