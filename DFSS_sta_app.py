@@ -11,12 +11,17 @@ from io import BytesIO
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+import json
+import os
+import secrets
+import string
 
 st.set_page_config(page_title="Para_Variation - 蒙特卡洛模拟", layout="wide")
 
-# ==================== 多语言文本字典 ====================
+# ==================== 多语言文本字典（增加授权相关文本） ====================
 TEXTS = {
     "zh": {
         "title": "📊 Para_Variation - 基于蒙特卡洛模拟分析",
@@ -127,6 +132,41 @@ TEXTS = {
         "contribution": "贡献百分比",
         "contact_report": "联系电邮：Techlife2027@gmail.com",
         "report_date": "报告生成时间：{}",
+        # 新增授权相关文本
+        "license_info": "授权信息",
+        "remaining_label": "剩余次数",
+        "expiry_label": "有效期至",
+        "report_key_label": "授权码 (Report Key)",
+        "no_license": "未输入授权码，当前为试用模式（本次会话剩余次数：{}）",
+        "trial_warning": "⚠️ 您还有 {} 次试用机会，输入授权码可解锁无限使用和下载功能。",
+        "purchase_button": "💰 购买授权码",
+        "need_license": "⚠️ 请先购买授权码后再使用模拟功能。",
+        "analyze_disabled": "您的免费次数已用完，请购买授权码后继续使用。",
+        "purchase_dialog_title": "购买授权码",
+        "plan_single": "单次通行",
+        "plan_50": "50次套餐",
+        "plan_1000": "1000次套餐",
+        "payment_note": "支付成功后，您将收到授权码。请将授权码粘贴到左侧边栏输入框中即可解锁全部功能。",
+        "payment_success_title": "✅ 支付成功",
+        "payment_success_msg": "您的授权码已生成",
+        "payment_save_key": "请妥善保管此授权码，下次使用时可手动复制并粘贴到左侧输入框。",
+        "admin_settings": "管理员设置",
+        "admin_login": "管理员验证",
+        "username": "用户名",
+        "password": "密码",
+        "login": "登录",
+        "key_generator": "Report Key 生成器",
+        "license_type": "选择授权类型",
+        "custom_uses": "使用次数",
+        "custom_months": "有效期（月）",
+        "custom_key_input": "自定义授权码（可选，留空则自动生成）",
+        "generate_key": "生成 Report Key",
+        "generated_key": "已生成 {} Report Key：",
+        "key_list": "已生成的所有 Report Key",
+        "show_limit": "显示条数",
+        "export_keys": "📥 导出所有授权码为 Excel",
+        "no_keys": "暂无授权码记录",
+        "close": "确定",
     },
     "en": {
         "title": "📊 Para_Variation - Monte Carlo Simulation",
@@ -237,106 +277,377 @@ TEXTS = {
         "contribution": "Contribution %",
         "contact_report": "Contact Email: Techlife2027@gmail.com",
         "report_date": "Report Date: {}",
+        # License texts
+        "license_info": "License Info",
+        "remaining_label": "Remaining uses",
+        "expiry_label": "Valid until",
+        "report_key_label": "Report Key",
+        "no_license": "No Report Key. Trial mode (remaining credits this session: {})",
+        "trial_warning": "⚠️ You have {} trial credits left. Enter a license key to unlock unlimited usage.",
+        "purchase_button": "💰 Purchase License",
+        "need_license": "⚠️ Please purchase a license before using simulation.",
+        "analyze_disabled": "Your free trial has expired. Please purchase a license to continue.",
+        "purchase_dialog_title": "Purchase License",
+        "plan_single": "Single Pass",
+        "plan_50": "50 Credits",
+        "plan_1000": "1000 Credits",
+        "payment_note": "After successful payment, you will receive a license key. Please paste it into the left sidebar to unlock all features.",
+        "payment_success_title": "✅ Payment Successful",
+        "payment_success_msg": "Your license key has been generated",
+        "payment_save_key": "Please save this license key. You can copy and paste it into the left sidebar next time.",
+        "admin_settings": "Admin Settings",
+        "admin_login": "Admin Verification",
+        "username": "Username",
+        "password": "Password",
+        "login": "Login",
+        "key_generator": "Report Key Generator",
+        "license_type": "License Type",
+        "custom_uses": "Number of uses",
+        "custom_months": "Validity (months)",
+        "custom_key_input": "Custom license key (optional, leave blank to auto-generate)",
+        "generate_key": "Generate Report Key",
+        "generated_key": "Generated {} Report Key:",
+        "key_list": "All Generated Report Keys",
+        "show_limit": "Show",
+        "export_keys": "📥 Export all keys to Excel",
+        "no_keys": "No license keys yet.",
+        "close": "OK",
     }
 }
 
-# 初始化语言
+# ==================== 授权与试用数据管理 ====================
+USAGE_FILE = "usage_data.json"
+
+def load_usage_data():
+    if os.path.exists(USAGE_FILE):
+        try:
+            with open(USAGE_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_usage_data(data):
+    with open(USAGE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+LICENSE_TYPES = {
+    "trial": {"name": "试用版", "max_uses": 3, "max_months": 1, "en_name": "Trial"},
+    "level1": {"name": "一级用户", "max_uses": 100, "max_months": 12, "en_name": "Level 1"},
+    "level2": {"name": "二级用户", "max_uses": 300, "max_months": 24, "en_name": "Level 2"},
+    "level3": {"name": "三级用户", "max_uses": 500, "max_months": 36, "en_name": "Level 3"},
+    "level4": {"name": "四级用户", "max_uses": 1000, "max_months": 60, "en_name": "Level 4"},
+}
+
+def generate_report_key(license_type, custom_uses=None, custom_months=None, custom_key=None):
+    if license_type == "custom":
+        max_uses = custom_uses
+        max_months = custom_months
+        type_name = "自定义"
+    else:
+        lic_info = LICENSE_TYPES[license_type]
+        max_uses = lic_info["max_uses"]
+        max_months = lic_info["max_months"]
+        type_name = lic_info["name"]
+    expiry = datetime.now() + timedelta(days=max_months*30)
+    expiry_str = expiry.isoformat()
+    usage_db = load_usage_data()
+    if custom_key and custom_key.strip():
+        new_key = custom_key.strip().upper()
+        if new_key in usage_db:
+            return None, 0, None, "授权码已存在"
+    else:
+        while True:
+            random_str = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+            new_key = f"{license_type.upper()}_{random_str}"
+            if new_key not in usage_db:
+                break
+    usage_db[new_key] = {
+        "type": license_type,
+        "remaining": max_uses,
+        "expiry": expiry_str,
+        "total_uses": 0,
+        "generated_at": datetime.now().isoformat()
+    }
+    save_usage_data(usage_db)
+    return new_key, max_uses, expiry_str, type_name
+
+def activate_license(report_key):
+    if not report_key:
+        return False, 0, None, None
+    usage_db = load_usage_data()
+    if report_key in usage_db:
+        record = usage_db[report_key]
+        remaining = record["remaining"]
+        expiry_str = record["expiry"]
+        expiry = datetime.fromisoformat(expiry_str)
+        if remaining > 0 and datetime.now() <= expiry:
+            return True, remaining, expiry_str, record.get("type", "unknown")
+    return False, 0, None, None
+
+def consume_usage(report_key):
+    if st.session_state.get("admin_logged_in", False):
+        return True
+    if not report_key:
+        if st.session_state.trial_uses_left > 0:
+            st.session_state.trial_uses_left -= 1
+            return True
+        else:
+            return False
+    usage_db = load_usage_data()
+    if report_key in usage_db:
+        record = usage_db[report_key]
+        if record["remaining"] > 0 and datetime.now() <= datetime.fromisoformat(record["expiry"]):
+            record["remaining"] -= 1
+            record["total_uses"] = record.get("total_uses", 0) + 1
+            save_usage_data(usage_db)
+            return True
+    return False
+
+def get_remaining_info(report_key):
+    if st.session_state.get("admin_logged_in", False):
+        return ("无限" if st.session_state.lang=="zh" else "Unlimited"), ("永久" if st.session_state.lang=="zh" else "Permanent")
+    if report_key:
+        valid, remaining, expiry_str, _ = activate_license(report_key)
+        if valid:
+            return str(remaining), expiry_str[:10]
+    return str(st.session_state.trial_uses_left), ("试用剩余次数" if st.session_state.lang=="zh" else "Trial left")
+
+def is_premium_user(report_key):
+    if st.session_state.get("admin_logged_in", False):
+        return True
+    if report_key:
+        valid, _, _, _ = activate_license(report_key)
+        return valid
+    return False
+
+# ==================== 支付链接配置（请替换为您的实际 Stripe Payment Link URL） ====================
+# 根据提供的 product ID 在 Stripe 后台创建 Payment Link 后，将生成的链接填入下方
+PAYMENT_LINKS = {
+    "single": {
+        "url": "https://buy.stripe.com/your_single_pass_link",   # 替换为单次通行 Payment Link
+        "name_zh": "单次通行",
+        "name_en": "Single Pass",
+        "price_usd": 3,
+        "uses": 3,
+        "months": 9999
+    },
+    "50": {
+        "url": "https://buy.stripe.com/your_50_times_link",      # 替换为 50次套餐 Payment Link
+        "name_zh": "50次套餐",
+        "name_en": "50 Credits",
+        "price_usd": 30,
+        "uses": 50,
+        "months": 1
+    },
+    "1000": {
+        "url": "https://buy.stripe.com/your_1000_times_link",    # 替换为 1000次套餐 Payment Link
+        "name_zh": "1000次套餐",
+        "name_en": "1000 Credits",
+        "price_usd": 200,
+        "uses": 1000,
+        "months": 12
+    }
+}
+
+# ==================== 管理员登录验证 ====================
+ADMIN_USERNAME = "Laurence_ku"
+ADMIN_PASSWORD = "Ku_product$2026"
+
+# ==================== 支付回调处理 ====================
+def handle_payment_callback():
+    params = st.query_params
+    if "payment_success" in params and "plan" in params:
+        plan_key = params["plan"]
+        if plan_key in PAYMENT_LINKS:
+            uses = PAYMENT_LINKS[plan_key]["uses"]
+            months = PAYMENT_LINKS[plan_key]["months"]
+            new_key, max_uses, expiry_str, _ = generate_report_key("custom", custom_uses=uses, custom_months=months)
+            if new_key:
+                st.session_state.current_report_key = new_key
+                st.session_state.payment_new_key = new_key
+                st.session_state.show_payment_dialog = True
+                st.query_params.clear()
+                st.rerun()
+            else:
+                st.error("生成授权码失败，请联系管理员。" if st.session_state.lang=="zh" else "Failed to generate license key. Contact admin.")
+                st.query_params.clear()
+        else:
+            st.error("无效的套餐类型。" if st.session_state.lang=="zh" else "Invalid plan type.")
+            st.query_params.clear()
+
+def show_payment_success_dialog():
+    if st.session_state.get("show_payment_dialog", False):
+        @st.dialog(t("payment_success_title") if st.session_state.lang=="zh" else "✅ Payment Successful")
+        def payment_success_dialog():
+            lang = st.session_state.lang
+            st.markdown(f"### {t('payment_success_msg')}")
+            st.code(st.session_state.payment_new_key, language="text")
+            st.caption(t("payment_save_key"))
+            if st.button(t("close")):
+                st.session_state.show_payment_dialog = False
+                st.session_state.payment_new_key = ""
+                st.rerun()
+        payment_success_dialog()
+
+# ==================== 购买对话框 ====================
+@st.dialog(t("purchase_dialog_title"), width="large")
+def purchase_dialog():
+    lang = st.session_state.lang
+    if lang == "zh":
+        st.markdown("### 选择套餐")
+        st.markdown("""
+| 套餐 | 价格 | 次数 | 有效期 |
+|------|------|------|--------|
+| 单次通行 | 18元 / 3美元 | 3次 | 无限制 |
+| 50次套餐 | 180元 / 30美元 | 50次 | 1个月 |
+| 1000次套餐 | 1200元 / 200美元 | 1000次 | 12个月 |
+""")
+    else:
+        st.markdown("### Select Plan")
+        st.markdown("""
+| Plan | Price | Credits | Validity |
+|------|-------|---------|----------|
+| Single Pass | 18 RMB / $3 | 3 uses | Unlimited |
+| 50 Credits | 180 RMB / $30 | 50 uses | 1 month |
+| 1000 Credits | 1200 RMB / $200 | 1000 uses | 12 months |
+""")
+    st.markdown("#### 💳 " + ("银行卡/数字钱包支付（Stripe）" if lang=="zh" else "Card / Digital Wallet Payment (Stripe)"))
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        url = PAYMENT_LINKS["single"]["url"]
+        name = PAYMENT_LINKS["single"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["single"]["name_en"]
+        price = PAYMENT_LINKS["single"]["price_usd"]
+        button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🎟️ {name} ${price}</a>'
+        st.markdown(button_html, unsafe_allow_html=True)
+    
+    with col2:
+        url = PAYMENT_LINKS["50"]["url"]
+        name = PAYMENT_LINKS["50"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["50"]["name_en"]
+        price = PAYMENT_LINKS["50"]["price_usd"]
+        button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">📦 {name} ${price}</a>'
+        st.markdown(button_html, unsafe_allow_html=True)
+    
+    with col3:
+        url = PAYMENT_LINKS["1000"]["url"]
+        name = PAYMENT_LINKS["1000"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["1000"]["name_en"]
+        price = PAYMENT_LINKS["1000"]["price_usd"]
+        button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🚀 {name} ${price}</a>'
+        st.markdown(button_html, unsafe_allow_html=True)
+    
+    st.markdown(t("payment_note"))
+
+# ==================== 管理员设置弹窗 ====================
+@st.dialog(t("admin_settings"), width="large")
+def admin_settings_dialog():
+    lang = st.session_state.lang
+    st.subheader(t("admin_login"))
+    if not st.session_state.admin_logged_in:
+        username = st.text_input(t("username"))
+        password = st.text_input(t("password"), type="password")
+        if st.button(t("login")):
+            if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+                st.session_state.admin_logged_in = True
+                st.rerun()
+            else:
+                st.error("用户名或密码错误" if lang=="zh" else "Incorrect username or password")
+        return
+
+    st.success("管理员已登录" if lang=="zh" else "Admin logged in")
+    st.markdown("---")
+    st.subheader(t("key_generator"))
+    key_type = st.selectbox(t("license_type"), ["试用版", "一级用户", "二级用户", "三级用户", "四级用户", "自定义"])
+    custom_uses = None
+    custom_months = None
+    if key_type == "自定义":
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            custom_uses = st.number_input(t("custom_uses"), min_value=1, step=1, value=100)
+        with col_c2:
+            custom_months = st.number_input(t("custom_months"), min_value=1, step=1, value=12)
+    custom_key_input = st.text_input(t("custom_key_input"), placeholder="例如：VIP_2026_001")
+    if st.button(t("generate_key")):
+        if key_type == "试用版":
+            lic_type = "trial"
+        elif key_type == "一级用户":
+            lic_type = "level1"
+        elif key_type == "二级用户":
+            lic_type = "level2"
+        elif key_type == "三级用户":
+            lic_type = "level3"
+        elif key_type == "四级用户":
+            lic_type = "level4"
+        else:
+            lic_type = "custom"
+        result = generate_report_key(lic_type, custom_uses, custom_months, custom_key_input)
+        if result[0] is None:
+            st.error(result[3])
+        else:
+            new_key, max_uses, expiry_str, type_name = result
+            st.success(t("generated_key").format(type_name))
+            st.code(new_key, language="text")
+            st.write(f"可使用次数：{max_uses} 次，有效期至：{expiry_str[:10]}" if lang=="zh" else f"Uses: {max_uses}, Valid until: {expiry_str[:10]}")
+    
+    st.markdown("---")
+    st.subheader(t("key_list"))
+    usage_db = load_usage_data()
+    records = []
+    for key, data in usage_db.items():
+        gen_time = data.get("generated_at")
+        if gen_time:
+            try:
+                gen_dt = datetime.fromisoformat(gen_time)
+            except:
+                gen_dt = datetime.min
+        else:
+            gen_dt = datetime.min
+        records.append({
+            "授权码" if lang=="zh" else "License Key": key,
+            "类型" if lang=="zh" else "Type": data.get("type", "unknown"),
+            "剩余次数" if lang=="zh" else "Remaining": data["remaining"],
+            "总使用次数" if lang=="zh" else "Total uses": data.get("total_uses", 0),
+            "有效期至" if lang=="zh" else "Valid until": data["expiry"][:10] if data["expiry"] else "永久",
+            "生成时间" if lang=="zh" else "Generated at": gen_dt.strftime("%Y-%m-%d %H:%M:%S") if gen_dt != datetime.min else "未知"
+        })
+    records.sort(key=lambda x: x["生成时间" if lang=="zh" else "Generated at"], reverse=True)
+    show_limit = st.selectbox(t("show_limit"), ["最近10条", "最近20条", "最近50条", "全部"] if lang=="zh" else ["Last 10", "Last 20", "Last 50", "All"], index=0)
+    if lang=="zh":
+        limit_map = {"最近10条":10, "最近20条":20, "最近50条":50, "全部":len(records)}
+    else:
+        limit_map = {"Last 10":10, "Last 20":20, "Last 50":50, "All":len(records)}
+    limit = limit_map[show_limit]
+    display_records = records[:limit]
+    if display_records:
+        df = pd.DataFrame(display_records)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info(t("no_keys"))
+    if st.button(t("export_keys")):
+        if records:
+            df_all = pd.DataFrame(records)
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_all.to_excel(writer, sheet_name="授权码列表" if lang=="zh" else "License Keys", index=False)
+            excel_data = output.getvalue()
+            st.download_button(label="点击下载 Excel 文件" if lang=="zh" else "Download Excel", data=excel_data, file_name=f"report_keys_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        else:
+            st.warning(t("no_keys"))
+
+# ==================== 初始化 Session State ====================
 if "lang" not in st.session_state:
     st.session_state.lang = "zh"
-
-def t(key):
-    return TEXTS[st.session_state.lang].get(key, key)
-
-# 自定义 CSS (修改版)
-st.markdown("""
-<style>
-    /* 全局字体颜色黑色 */
-    html, body, .stApp, .stMarkdown, .stText, .stNumberInput, .stSelectbox, .stTextArea, .stDataFrame, .stMetric {
-        color: #000000 !important;
-    }
-    .main-title { font-size: 2.5rem; font-weight: 600; color: #000000; margin-bottom: 1rem; }
-    .section-header { font-size: 1.5rem; font-weight: 500; color: #000000; border-left: 5px solid #cccccc; padding-left: 15px; margin: 20px 0 15px 0; }
-    .metric-card { background-color: #f8f9fa; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .metric-label { font-size: 1rem; color: #000000; margin-bottom: 5px; }
-    .metric-value { font-size: 1.8rem; font-weight: 600; color: #000000; }
-    .ppm-table { border-collapse: collapse; width: 100%; margin: 0 auto; }
-    .ppm-table th, .ppm-table td { border: 2px solid #000000; padding: 10px 16px; text-align: center; font-size: 1rem; }
-    .ppm-table th { background-color: #e9ecef; font-weight: 600; }
-    
-    /* 主按钮（开始\\n蒙特卡洛模拟）红底白字 + 换行支持 */
-    button[data-testid="baseButton-primary"] {
-        background-color: #dc3545 !important;
-        color: white !important;
-        font-weight: 500;
-        border-radius: 5px;
-        font-size: 1.2rem;
-        margin-top: 20px;
-        white-space: pre-line !important;
-    }
-    button[data-testid="baseButton-primary"]:hover {
-        background-color: #c82333 !important;
-    }
-    /* 确保按钮内所有文本都支持换行 */
-    button[data-testid="baseButton-primary"] * {
-        white-space: pre-line !important;
-    }
-    
-    /* 辅助按钮（添加参数行、删除）浅蓝色 */
-    .stButton > button:not([data-testid="baseButton-primary"]) {
-        background-color: #3498db !important;
-        color: white !important;
-        font-weight: 500;
-        border-radius: 5px;
-    }
-    .stButton > button:not([data-testid="baseButton-primary"]):hover {
-        background-color: #2980b9 !important;
-    }
-    
-    /* 语言切换按钮（中文/English）红底白字，通过包裹类实现，覆盖辅助按钮样式 */
-    .lang-btn-wrap .stButton button {
-        background-color: #dc3545 !important;
-        color: white !important;
-        font-weight: 500;
-        border-radius: 5px;
-    }
-    .lang-btn-wrap .stButton button:hover {
-        background-color: #c82333 !important;
-    }
-    
-    .design-value-card { background-color: #e8f4fd; border-radius: 10px; padding: 15px; margin-top: 15px; text-align: center; border-left: 5px solid #cccccc; }
-    .design-value-card strong { font-size: 1.1rem; color: #000000; }
-    .design-value-number { font-size: 1.6rem; font-weight: 600; color: #000000; margin-top: 5px; }
-    .big-label { font-size: 1.3rem; font-weight: 500; margin-bottom: 5px; color: #000000; }
-    .param-letter { font-weight: bold; font-size: 1rem; text-align: center; background-color: #e9ecef; border-radius: 4px; padding: 6px 0; width: 40px; color: #000000; }
-    .formula-hint { font-size: 0.9rem; color: #000000; margin-bottom: 5px; }
-</style>
-""", unsafe_allow_html=True)
-
-# 语言切换按钮（横向排列，红底白字样式通过包裹 div 实现）
-col_lang1, col_lang2, col_lang3 = st.columns([0.7, 0.15, 0.15])
-with col_lang2:
-    st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
-    if st.button("中文", key="lang_zh", use_container_width=True):
-        st.session_state.lang = "zh"
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-with col_lang3:
-    st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
-    if st.button("English", key="lang_en", use_container_width=True):
-        st.session_state.lang = "en"
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# 以下为原有代码，保持不变
-# 初始化 session state
-if "params" not in st.session_state:
-    st.session_state.params = pd.DataFrame({
-        "参数名称": ["Cell Cap", "Suction P", "Brush P", "Other(Pump+display)", "V"],
-        "均值(Typ)": [2450.0, 70.0, 30.0, 15.0, 3.6],
-        "标准差(Std)": [20.74, 0.77, 0.90, 0.45, 0.0036],
-        "分布": [t("dist_full") for _ in range(5)],
-        "分布参数": [{} for _ in range(5)]
-    })
+if "admin_logged_in" not in st.session_state:
+    st.session_state.admin_logged_in = False
+if "analyst_name" not in st.session_state:
+    st.session_state.analyst_name = ""
+if "analyst_title" not in st.session_state:
+    st.session_state.analyst_title = ""
+if "current_report_key" not in st.session_state:
+    st.session_state.current_report_key = ""
+if "trial_uses_left" not in st.session_state:
+    st.session_state.trial_uses_left = 3
 if "sim_results_raw" not in st.session_state:
     st.session_state.sim_results_raw = None
 if "formula" not in st.session_state:
@@ -347,21 +658,22 @@ if "usl_str" not in st.session_state:
     st.session_state.usl_str = "40.0"
 if "lsl_str" not in st.session_state:
     st.session_state.lsl_str = "30.0"
-if "analyst_name" not in st.session_state:
-    st.session_state.analyst_name = ""
-if "analyst_title" not in st.session_state:
-    st.session_state.analyst_title = ""
+if "params" not in st.session_state:
+    st.session_state.params = pd.DataFrame({
+        "参数名称": ["Cell Cap", "Suction P", "Brush P", "Other(Pump+display)", "V"],
+        "均值(Typ)": [2450.0, 70.0, 30.0, 15.0, 3.6],
+        "标准差(Std)": [20.74, 0.77, 0.90, 0.45, 0.0036],
+        "分布": ["正态分布（完整）" for _ in range(5)],
+        "分布参数": [{} for _ in range(5)]
+    })
+if "show_payment_dialog" not in st.session_state:
+    st.session_state.show_payment_dialog = False
+if "payment_new_key" not in st.session_state:
+    st.session_state.payment_new_key = ""
 
-def get_distributions():
-    return [
-        t("dist_full"),
-        t("dist_pos"),
-        t("dist_neg"),
-        t("dist_uniform"),
-        t("dist_lognorm"),
-        t("dist_weibull"),
-        t("dist_tri")
-    ]
+# ==================== 辅助函数 ====================
+def t(key):
+    return TEXTS[st.session_state.lang].get(key, key)
 
 def update_param_letters():
     letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
@@ -425,6 +737,17 @@ def compute_design_value(params_df: pd.DataFrame, formula: str, param_letters: D
     means = params_df["均值(Typ)"].values.astype(float)
     val = safe_eval_with_mapping(formula, param_names, means, param_letters)
     return val if not np.isnan(val) else None
+
+def get_distributions():
+    return [
+        t("dist_full"),
+        t("dist_pos"),
+        t("dist_neg"),
+        t("dist_uniform"),
+        t("dist_lognorm"),
+        t("dist_weibull"),
+        t("dist_tri")
+    ]
 
 def generate_sample(dist: str, mean: float, std: float, dist_params: Dict, size: int = 1) -> np.ndarray:
     if dist == t("dist_full"):
@@ -760,10 +1083,90 @@ def generate_word_report(raw, usl, lsl, n_sim, seed, formula, params_df, param_l
     doc_bytes.seek(0)
     return doc_bytes
 
+# ==================== 主函数 ====================
 def main():
+    # 处理支付回调
+    handle_payment_callback()
+    show_payment_success_dialog()
+
+    # 自定义 CSS
+    st.markdown("""
+    <style>
+        html, body, .stApp, .stMarkdown, .stText, .stNumberInput, .stSelectbox, .stTextArea, .stDataFrame, .stMetric {
+            color: #000000 !important;
+        }
+        .main-title { font-size: 2.5rem; font-weight: 600; color: #000000; margin-bottom: 1rem; }
+        .section-header { font-size: 1.5rem; font-weight: 500; color: #000000; border-left: 5px solid #cccccc; padding-left: 15px; margin: 20px 0 15px 0; }
+        .metric-card { background-color: #f8f9fa; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .metric-label { font-size: 1rem; color: #000000; margin-bottom: 5px; }
+        .metric-value { font-size: 1.8rem; font-weight: 600; color: #000000; }
+        .ppm-table { border-collapse: collapse; width: 100%; margin: 0 auto; }
+        .ppm-table th, .ppm-table td { border: 2px solid #000000; padding: 10px 16px; text-align: center; font-size: 1rem; }
+        .ppm-table th { background-color: #e9ecef; font-weight: 600; }
+        button[data-testid="baseButton-primary"] {
+            background-color: #dc3545 !important;
+            color: white !important;
+            font-weight: 500;
+            border-radius: 5px;
+            font-size: 1.2rem;
+            margin-top: 20px;
+            white-space: pre-line !important;
+        }
+        button[data-testid="baseButton-primary"]:hover {
+            background-color: #c82333 !important;
+        }
+        button[data-testid="baseButton-primary"] * {
+            white-space: pre-line !important;
+        }
+        .stButton > button:not([data-testid="baseButton-primary"]) {
+            background-color: #3498db !important;
+            color: white !important;
+            font-weight: 500;
+            border-radius: 5px;
+        }
+        .stButton > button:not([data-testid="baseButton-primary"]):hover {
+            background-color: #2980b9 !important;
+        }
+        .lang-btn-wrap .stButton button {
+            background-color: #dc3545 !important;
+            color: white !important;
+            font-weight: 500;
+            border-radius: 5px;
+        }
+        .lang-btn-wrap .stButton button:hover {
+            background-color: #c82333 !important;
+        }
+        .design-value-card { background-color: #e8f4fd; border-radius: 10px; padding: 15px; margin-top: 15px; text-align: center; border-left: 5px solid #cccccc; }
+        .design-value-card strong { font-size: 1.1rem; color: #000000; }
+        .design-value-number { font-size: 1.6rem; font-weight: 600; color: #000000; margin-top: 5px; }
+        .big-label { font-size: 1.3rem; font-weight: 500; margin-bottom: 5px; color: #000000; }
+        .param-letter { font-weight: bold; font-size: 1rem; text-align: center; background-color: #e9ecef; border-radius: 4px; padding: 6px 0; width: 40px; color: #000000; }
+        .formula-hint { font-size: 0.9rem; color: #000000; margin-bottom: 5px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 右上角语言切换 + 设置按钮
+    col_lang1, col_lang2, col_lang3, col_gear = st.columns([0.6, 0.15, 0.15, 0.1])
+    with col_lang2:
+        st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
+        if st.button("中文", key="lang_zh", use_container_width=True):
+            st.session_state.lang = "zh"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col_lang3:
+        st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
+        if st.button("English", key="lang_en", use_container_width=True):
+            st.session_state.lang = "en"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col_gear:
+        if st.button("⚙️", key="settings_btn", use_container_width=True):
+            admin_settings_dialog()
+
     st.markdown(f'<div class="main-title">{t("title")}</div>', unsafe_allow_html=True)
     st.markdown(t("subtitle"))
 
+    # 侧边栏
     with st.sidebar:
         st.markdown(f"## {t('sim_settings')}")
         n_sim = st.number_input(t("trail_number"), min_value=100, max_value=100000, value=1000, step=100)
@@ -791,10 +1194,36 @@ def main():
         st.session_state.analyst_title = analyst_title
 
         st.markdown("---")
+        st.markdown(f"### 🔑 {t('license_info')}")
+        new_report_key = st.text_input(t("report_key_label"), value=st.session_state.current_report_key, type="password", key="report_key_input", placeholder="输入授权码后按 Enter")
+        if new_report_key != st.session_state.current_report_key:
+            st.session_state.current_report_key = new_report_key
+            if new_report_key:
+                valid, remaining, expiry_str, _ = activate_license(new_report_key)
+                if valid:
+                    st.success(f"授权成功！剩余 {remaining} 次，有效期至 {expiry_str[:10]}" if st.session_state.lang=="zh" else f"Success! {remaining} uses left, valid until {expiry_str[:10]}")
+                    st.rerun()
+                else:
+                    st.error("授权码无效或已过期" if st.session_state.lang=="zh" else "Invalid or expired license key")
+                    st.session_state.current_report_key = ""
+                    st.rerun()
+            else:
+                st.rerun()
+        remaining_str, expiry_str = get_remaining_info(st.session_state.current_report_key)
+        st.write(f"{t('remaining_label')}: {remaining_str}")
+        if expiry_str not in ("试用剩余次数", "Trial left"):
+            st.write(f"{t('expiry_label')}: {expiry_str}")
+        if not is_premium_user(st.session_state.current_report_key):
+            st.warning(t("trial_warning").format(st.session_state.trial_uses_left))
+
+        if st.button(t("purchase_button"), use_container_width=True):
+            purchase_dialog()
+
+        st.markdown("---")
         st.markdown(f"**{t('contact')}**")
         st.markdown(t("email"))
 
-    # 参数输入表格
+    # 参数输入表格（与原代码相同）
     st.markdown(f'<div class="section-header">{t("param_input")}</div>', unsafe_allow_html=True)
     header_cols = st.columns([0.3, 1.5, 1, 1, 1.2, 0.3])
     header_cols[0].markdown(f"**{t('letter')}**")
@@ -927,9 +1356,22 @@ def main():
     else:
         st.warning(t("formula_invalid"))
 
+    # 模拟按钮及授权检查
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button(t("start_sim"), type="primary", use_container_width=True):
+            # 授权检查
+            if not is_premium_user(st.session_state.current_report_key):
+                if st.session_state.trial_uses_left <= 0:
+                    st.error(t("analyze_disabled"))
+                    purchase_dialog()
+                    st.stop()
+            # 消耗次数（授权或试用）
+            if not consume_usage(st.session_state.current_report_key):
+                st.error(t("analyze_disabled"))
+                purchase_dialog()
+                st.stop()
+
             if st.session_state.params.isnull().values.any():
                 st.error(t("formula_invalid"))
                 st.stop()
@@ -969,6 +1411,7 @@ def main():
                 "formula": formula,
             }
 
+    # 显示结果（与原代码相同）
     if st.session_state.sim_results_raw is not None:
         raw = st.session_state.sim_results_raw
         results = raw["results"]
@@ -1034,9 +1477,15 @@ def main():
             csv = samples_df.to_csv(index=False, float_format="%.6f")
             st.download_button(t("download_csv"), data=csv, file_name=f"monte_carlo_data_{output_name}.csv", mime="text/csv")
 
-        doc_bytes = generate_word_report(raw, usl, lsl, n_sim, seed, formula, st.session_state.params, st.session_state.param_letters, st.session_state.analyst_name, st.session_state.analyst_title, output_name)
-        date_str = datetime.now().strftime("%Y%m%d")
-        st.download_button(t("download_report"), data=doc_bytes, file_name=f"DFSS_Report_{output_name}_{date_str}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        # 下载报告按钮（也需要授权检查）
+        if st.button(t("download_report")):
+            if not is_premium_user(st.session_state.current_report_key):
+                st.error(t("need_license"))
+                purchase_dialog()
+            else:
+                doc_bytes = generate_word_report(raw, usl, lsl, n_sim, seed, formula, st.session_state.params, st.session_state.param_letters, st.session_state.analyst_name, st.session_state.analyst_title, output_name)
+                date_str = datetime.now().strftime("%Y%m%d")
+                st.download_button(t("download_report"), data=doc_bytes, file_name=f"DFSS_Report_{output_name}_{date_str}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         st.success(t("success"))
 
 if __name__ == "__main__":
