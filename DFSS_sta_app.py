@@ -492,7 +492,7 @@ PAYMENT_LINKS = {
 
 PLAN_MAPPING = {
     "single": "single",
-    "100": "50",
+    "50": "50",
     "1000": "1000"
 }
 
