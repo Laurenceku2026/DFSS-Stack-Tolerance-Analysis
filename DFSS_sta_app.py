@@ -137,7 +137,7 @@ TEXTS = {
         "expiry_label": "有效期至",
         "report_key_label": "授权码 (Report Key)",
         "no_license": "未输入授权码，当前为试用模式（本次会话剩余次数：{}）",
-        "trial_warning": "⚠️ 您还有 {} 次试用机会，输入授权码可解锁无限使用和下载功能。\n\n**提示：试用次数仅在当前浏览器会话有效，刷新页面将重置为3次。**",
+        "trial_warning": "⚠️ 您还有 {} 次试用机会，输入授权码可解锁无限使用和下载功能。",
         "purchase_button": "💰 购买授权码",
         "need_license": "⚠️ 请先购买授权码后再使用模拟功能。",
         "analyze_disabled": "您的免费次数已用完，请购买授权码后继续使用。",
@@ -166,7 +166,6 @@ TEXTS = {
         "export_keys": "📥 导出所有授权码为 Excel",
         "no_keys": "暂无授权码记录",
         "close": "确定",
-        "trial_refresh_note": "试用次数仅当前会话有效，刷新页面将恢复3次。",
     },
     "en": {
         "title": "📊 Para_Variation - Monte Carlo Simulation",
@@ -282,7 +281,7 @@ TEXTS = {
         "expiry_label": "Valid until",
         "report_key_label": "Report Key",
         "no_license": "No Report Key. Trial mode (remaining credits this session: {})",
-        "trial_warning": "⚠️ You have {} trial credits left. Enter a license key to unlock unlimited usage.\n\n**Note:** Trial credits are valid only for the current session. Refreshing the page resets them to 3.",
+        "trial_warning": "⚠️ You have {} trial credits left. Enter a license key to unlock unlimited usage.",
         "purchase_button": "💰 Purchase License",
         "need_license": "⚠️ Please purchase a license before using simulation.",
         "analyze_disabled": "Your free trial has expired. Please purchase a license to continue.",
@@ -311,7 +310,6 @@ TEXTS = {
         "export_keys": "📥 Export all keys to Excel",
         "no_keys": "No license keys yet.",
         "close": "OK",
-        "trial_refresh_note": "Trial credits are session-based; refreshing the page restores 3 credits.",
     }
 }
 
@@ -492,6 +490,13 @@ PAYMENT_LINKS = {
     }
 }
 
+# 映射跳转URL中的plan参数到内部键
+PLAN_MAPPING = {
+    "single": "single",
+    "100": "50",      # 50次套餐跳转时使用 plan=100
+    "1000": "1000"
+}
+
 # ==================== 管理员登录验证 ====================
 ADMIN_USERNAME = "Laurence_ku"
 ADMIN_PASSWORD = "Ku_product$2026"
@@ -501,9 +506,11 @@ def handle_payment_callback():
     params = st.query_params
     if "order_success" in params and "plan" in params:
         plan_key = params["plan"]
-        if plan_key in PAYMENT_LINKS:
-            uses = PAYMENT_LINKS[plan_key]["uses"]
-            months = PAYMENT_LINKS[plan_key]["months"]
+        # 将外部plan映射到内部键
+        internal_plan = PLAN_MAPPING.get(plan_key)
+        if internal_plan and internal_plan in PAYMENT_LINKS:
+            uses = PAYMENT_LINKS[internal_plan]["uses"]
+            months = PAYMENT_LINKS[internal_plan]["months"]
             new_key, max_uses, expiry_str, _ = generate_report_key("custom", custom_uses=uses, custom_months=months)
             if new_key:
                 st.session_state.current_report_key = new_key
@@ -1131,7 +1138,7 @@ def main():
             border-radius: 5px;
         }
         .lang-btn-wrap .stButton button:hover { background-color: #c82333 !important; }
-        /* 齿轮按钮单独样式：无背景色，灰色，字体放大 */
+        /* 齿轮按钮单独样式：透明背景，灰色文字，无边框 */
         .gear-btn button {
             background-color: transparent !important;
             color: #555 !important;
@@ -1143,6 +1150,18 @@ def main():
         .gear-btn button:hover {
             background-color: transparent !important;
             color: #000 !important;
+        }
+        /* 侧边栏购买授权码按钮红底白字 */
+        section[data-testid="stSidebar"] .stButton button[key="purchase_btn"] {
+            background-color: #dc3545 !important;
+            color: white !important;
+            font-weight: bold !important;
+            border-radius: 8px !important;
+            border: none !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
+        }
+        section[data-testid="stSidebar"] .stButton button[key="purchase_btn"]:hover {
+            background-color: #c82333 !important;
         }
         .design-value-card { background-color: #e8f4fd; border-radius: 10px; padding: 15px; margin-top: 15px; text-align: center; border-left: 5px solid #cccccc; }
         .design-value-card strong { font-size: 1.1rem; color: #000000; }
@@ -1226,7 +1245,7 @@ def main():
         if not is_premium_user(st.session_state.current_report_key):
             st.warning(t("trial_warning").format(st.session_state.trial_uses_left))
 
-        if st.button(t("purchase_button"), use_container_width=True):
+        if st.button(t("purchase_button"), key="purchase_btn", use_container_width=True):
             purchase_dialog()
 
         st.markdown("---")
