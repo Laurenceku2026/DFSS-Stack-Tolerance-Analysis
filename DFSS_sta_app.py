@@ -18,6 +18,7 @@ import json
 import os
 import secrets
 import string
+import stripe
 
 st.set_page_config(page_title="Para_Variation - 蒙特卡洛模拟", layout="wide")
 
@@ -348,8 +349,6 @@ if "show_payment_dialog" not in st.session_state:
     st.session_state.show_payment_dialog = False
 if "payment_new_key" not in st.session_state:
     st.session_state.payment_new_key = ""
-if "pending_lang" not in st.session_state:
-    st.session_state.pending_lang = None
 
 # ==================== 辅助函数 ====================
 def t(key):
@@ -426,6 +425,7 @@ def activate_license(report_key):
     return False, 0, None, None
 
 def consume_usage(report_key):
+    """只在模拟时消耗次数，下载报告不消耗"""
     if st.session_state.get("admin_logged_in", False):
         return True
     if not report_key:
@@ -454,89 +454,60 @@ def get_remaining_info(report_key):
     return str(st.session_state.trial_uses_left), ("试用剩余次数" if st.session_state.lang=="zh" else "Trial left")
 
 def is_premium_user(report_key):
+    """检查是否已付费（付费用户或试用期用户），用于下载报告权限"""
     if st.session_state.get("admin_logged_in", False):
         return True
     if report_key:
         valid, _, _, _ = activate_license(report_key)
         return valid
+    # 试用期用户也可以下载报告（不消耗次数）
     return st.session_state.trial_uses_left > 0
 
-# ==================== 支付链接配置 ====================
-PAYMENT_LINKS = {
-    "single": {
-        "url": "https://buy.stripe.com/test_7sY8wPcYJ5Qu898cjO6Vq00",
-        "name_zh": "单次通行",
-        "name_en": "Single Pass",
-        "price_usd": 3,
-        "uses": 3,
-        "months": 9999
-    },
-    "50": {
-        "url": "https://buy.stripe.com/test_cNi3cv1g1a6KfBA6Zu6Vq01",
-        "name_zh": "50次套餐",
-        "name_en": "50 Credits",
-        "price_usd": 30,
-        "uses": 50,
-        "months": 1
-    },
-    "1000": {
-        "url": "https://buy.stripe.com/test_00wfZh6Alen0ahg2Je6Vq02",
-        "name_zh": "1000次套餐",
-        "name_en": "1000 Credits",
-        "price_usd": 200,
-        "uses": 1000,
-        "months": 12
-    }
-}
+# ==================== Stripe 配置 ====================
+try:
+    stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
+except:
+    stripe.api_key = ""
 
-PLAN_MAPPING = {
-    "single": "single",
-    "50": "50",
-    "1000": "1000"
-}
-
+# ==================== 管理员登录验证 ====================
 ADMIN_USERNAME = "Laurence_ku"
 ADMIN_PASSWORD = "Ku_product$2026"
 
-# ==================== 支付回调处理（修复语言保持） ====================
+# ==================== 支付回调处理（使用 Stripe Checkout Session） ====================
 def handle_payment_callback():
     params = st.query_params
-    # 恢复语言：优先从 URL 获取，否则从 pending_lang 获取（不清除 pending_lang，留给弹窗使用）
-    if "lang" in params:
-        lang_param = params["lang"]
-        if lang_param in ["zh", "en"]:
-            st.session_state.lang = lang_param
-    elif st.session_state.get("pending_lang") is not None:
-        st.session_state.lang = st.session_state.pending_lang
-        # 注意：这里不清除 pending_lang，让弹窗还能使用
-    # 处理支付成功
     if "order_success" in params and "plan" in params:
         plan_key = params["plan"]
-        internal_plan = PLAN_MAPPING.get(plan_key)
-        if internal_plan and internal_plan in PAYMENT_LINKS:
-            uses = PAYMENT_LINKS[internal_plan]["uses"]
-            months = PAYMENT_LINKS[internal_plan]["months"]
-            new_key, max_uses, expiry_str, _ = generate_report_key("custom", custom_uses=uses, custom_months=months)
-            if new_key:
-                st.session_state.current_report_key = new_key
-                st.session_state.payment_new_key = new_key
-                st.session_state.show_payment_dialog = True
-                st.query_params.clear()
-                st.rerun()
-            else:
-                st.error("生成授权码失败，请联系管理员。" if st.session_state.lang=="zh" else "Failed to generate license key. Contact admin.")
-                st.query_params.clear()
+        # 定义套餐参数
+        if plan_key == "single":
+            uses = 3
+            months = 9999
+        elif plan_key == "50":
+            uses = 50
+            months = 1
+        elif plan_key == "1000":
+            uses = 1000
+            months = 12
         else:
             st.error("无效的套餐类型。" if st.session_state.lang=="zh" else "Invalid plan type.")
             st.query_params.clear()
+            return
+        new_key, max_uses, expiry_str, _ = generate_report_key("custom", custom_uses=uses, custom_months=months)
+        if new_key:
+            st.session_state.current_report_key = new_key
+            st.session_state.payment_new_key = new_key
+            st.session_state.show_payment_dialog = True
+            st.query_params.clear()
+            st.rerun()
+        else:
+            st.error("生成授权码失败，请联系管理员。" if st.session_state.lang=="zh" else "Failed to generate license key. Contact admin.")
+            st.query_params.clear()
 
-# ==================== 支付成功弹窗（优先使用 pending_lang） ====================
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
         @st.dialog(" ")
         def payment_success_dialog():
-            # 优先使用 pending_lang（购买前的语言），若为 None 则使用当前 lang
-            lang = st.session_state.get("pending_lang") or st.session_state.lang
+            lang = st.session_state.lang
             if lang == "zh":
                 st.markdown("### ✅ 支付成功")
                 st.markdown("您的授权码已生成")
@@ -551,16 +522,14 @@ def show_payment_success_dialog():
             if st.button("确定" if lang == "zh" else "OK"):
                 st.session_state.show_payment_dialog = False
                 st.session_state.payment_new_key = ""
-                st.session_state.pending_lang = None  # 清除 pending_lang
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框 ====================
-@st.dialog(" ")
+# ==================== 购买对话框（使用 Stripe Checkout Session） ====================
+@st.dialog(t("purchase_dialog_title"), width="large")
 def purchase_dialog():
     lang = st.session_state.lang
     if lang == "zh":
-        st.markdown("### 购买授权码")
         st.markdown("### 选择套餐")
         st.markdown("""
 | 套餐 | 价格 | 次数 | 有效期 |
@@ -569,9 +538,7 @@ def purchase_dialog():
 | 50次套餐 | 180元 / 30美元 | 50次 | 1个月 |
 | 1000次套餐 | 1200元 / 200美元 | 1000次 | 12个月 |
 """)
-        st.markdown("#### 💳 银行卡/数字钱包支付（Stripe）")
     else:
-        st.markdown("### Purchase License")
         st.markdown("### Select Plan")
         st.markdown("""
 | Plan | Price | Credits | Validity |
@@ -580,44 +547,92 @@ def purchase_dialog():
 | 50 Credits | 180 RMB / $30 | 50 uses | 1 month |
 | 1000 Credits | 1200 RMB / $200 | 1000 uses | 12 months |
 """)
-        st.markdown("#### 💳 Card / Digital Wallet Payment (Stripe)")
+    st.markdown("#### 💳 " + ("银行卡/数字钱包支付（Stripe）" if lang=="zh" else "Card / Digital Wallet Payment (Stripe)"))
+    
+    if not stripe.api_key:
+        st.error("Stripe 未配置，请联系管理员。" if lang=="zh" else "Stripe not configured. Please contact admin.")
+        return
     
     col1, col2, col3 = st.columns(3)
+    
+    # 单次通行
     with col1:
-        url = PAYMENT_LINKS["single"]["url"]
-        if "?" in url:
-            url += f"&lang={lang}"
-        else:
-            url += f"?lang={lang}"
-        name = PAYMENT_LINKS["single"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["single"]["name_en"]
-        price = PAYMENT_LINKS["single"]["price_usd"]
-        button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🎟️ {name} ${price}</a>'
-        st.markdown(button_html, unsafe_allow_html=True)
+        if st.button("🎟️ " + (t("plan_single") + " $3"), use_container_width=True):
+            try:
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=["card", "wechat_pay", "alipay"],
+                    line_items=[{
+                        "price_data": {
+                            "currency": "usd",
+                            "product_data": {"name": t("plan_single")},
+                            "unit_amount": 300,
+                        },
+                        "quantity": 1,
+                    }],
+                    mode="payment",
+                    success_url="https://dfss-stack-tolerance-app.streamlit.app/?order_success=1&plan=single",
+                    cancel_url="https://dfss-stack-tolerance-app.streamlit.app/",
+                )
+                st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
+                button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
+                st.markdown(button_html, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"创建支付会话失败: {e}" if lang=="zh" else f"Failed to create checkout session: {e}")
+    
+    # 50次套餐
     with col2:
-        url = PAYMENT_LINKS["50"]["url"]
-        if "?" in url:
-            url += f"&lang={lang}"
-        else:
-            url += f"?lang={lang}"
-        name = PAYMENT_LINKS["50"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["50"]["name_en"]
-        price = PAYMENT_LINKS["50"]["price_usd"]
-        button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">📦 {name} ${price}</a>'
-        st.markdown(button_html, unsafe_allow_html=True)
+        if st.button("📦 " + (t("plan_50") + " $30"), use_container_width=True):
+            try:
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=["card", "wechat_pay", "alipay"],
+                    line_items=[{
+                        "price_data": {
+                            "currency": "usd",
+                            "product_data": {"name": t("plan_50")},
+                            "unit_amount": 3000,
+                        },
+                        "quantity": 1,
+                    }],
+                    mode="payment",
+                    success_url="https://dfss-stack-tolerance-app.streamlit.app/?order_success=1&plan=50",
+                    cancel_url="https://dfss-stack-tolerance-app.streamlit.app/",
+                )
+                st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
+                button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
+                st.markdown(button_html, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"创建支付会话失败: {e}" if lang=="zh" else f"Failed to create checkout session: {e}")
+    
+    # 1000次套餐
     with col3:
-        url = PAYMENT_LINKS["1000"]["url"]
-        if "?" in url:
-            url += f"&lang={lang}"
-        else:
-            url += f"?lang={lang}"
-        name = PAYMENT_LINKS["1000"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["1000"]["name_en"]
-        price = PAYMENT_LINKS["1000"]["price_usd"]
-        button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🚀 {name} ${price}</a>'
-        st.markdown(button_html, unsafe_allow_html=True)
+        if st.button("🚀 " + (t("plan_1000") + " $200"), use_container_width=True):
+            try:
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=["card", "wechat_pay", "alipay"],
+                    line_items=[{
+                        "price_data": {
+                            "currency": "usd",
+                            "product_data": {"name": t("plan_1000")},
+                            "unit_amount": 20000,
+                        },
+                        "quantity": 1,
+                    }],
+                    mode="payment",
+                    success_url="https://dfss-stack-tolerance-app.streamlit.app/?order_success=1&plan=1000",
+                    cancel_url="https://dfss-stack-tolerance-app.streamlit.app/",
+                )
+                st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
+                button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
+                st.markdown(button_html, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"创建支付会话失败: {e}" if lang=="zh" else f"Failed to create checkout session: {e}")
     
     if lang == "zh":
-        st.markdown("支付成功后，您将收到授权码。请将授权码粘贴到左侧边栏输入框中即可解锁全部功能。")
+        st.markdown("#### 🇨🇳 国内支付（微信 / 支付宝）")
+        st.info("支持信用卡、微信支付和支付宝。支付成功后会自动跳回本页面，授权码将自动激活。")
     else:
-        st.markdown("After successful payment, you will receive a license key. Please paste it into the left sidebar to unlock all features.")
+        st.markdown("#### 🇨🇳 Domestic Payment (WeChat Pay / Alipay)")
+        st.info("Supports credit cards, WeChat Pay and Alipay. You will be redirected back after payment, and the license key will be auto-activated.")
 
 # ==================== 管理员设置弹窗 ====================
 @st.dialog(t("admin_settings"), width="large")
@@ -715,7 +730,7 @@ def admin_settings_dialog():
         else:
             st.warning(t("no_keys"))
 
-# ==================== 蒙特卡洛模拟核心函数（保持不变） ====================
+# ==================== 蒙特卡洛模拟核心函数 ====================
 def update_param_letters():
     letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
     st.session_state.param_letters = {
@@ -1272,16 +1287,14 @@ def main():
         if not is_premium_user(st.session_state.current_report_key):
             st.warning(t("trial_warning").format(st.session_state.trial_uses_left))
 
-        # 购买按钮：记录当前语言到 pending_lang
         if st.button(t("purchase_button"), key="purchase_btn", use_container_width=True):
-            st.session_state.pending_lang = st.session_state.lang
             purchase_dialog()
 
         st.markdown("---")
         st.markdown(f"**{t('contact')}**")
         st.markdown(t("email"))
 
-    # 参数输入表格（保持原样）
+    # 参数输入表格
     st.markdown(f'<div class="section-header">{t("param_input")}</div>', unsafe_allow_html=True)
     header_cols = st.columns([0.3, 1.5, 1, 1, 1.2, 0.3])
     header_cols[0].markdown(f"**{t('letter')}**")
