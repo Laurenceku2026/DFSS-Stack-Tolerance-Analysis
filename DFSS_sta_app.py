@@ -492,7 +492,7 @@ PAYMENT_LINKS = {
 
 PLAN_MAPPING = {
     "single": "single",
-    "50": "50",
+    "100": "50",
     "1000": "1000"
 }
 
@@ -523,25 +523,35 @@ def handle_payment_callback():
             st.error("无效的套餐类型。" if st.session_state.lang=="zh" else "Invalid plan type.")
             st.query_params.clear()
 
+# ==================== 修复后的支付成功弹窗（手动判断语言） ====================
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
-        @st.dialog(" ")  # 空格占位符，避免空字符串错误
+        @st.dialog(" ")
         def payment_success_dialog():
-            st.markdown(f"### {t('payment_success_title')}")
-            st.markdown(f"{t('payment_success_msg')}")
+            lang = st.session_state.lang
+            if lang == "zh":
+                st.markdown("### ✅ 支付成功")
+                st.markdown("您的授权码已生成")
+            else:
+                st.markdown("### ✅ Payment Successful")
+                st.markdown("Your license key has been generated")
             st.code(st.session_state.payment_new_key, language="text")
-            st.caption(t("payment_save_key"))
-            if st.button(t("close")):
+            if lang == "zh":
+                st.caption("请妥善保管此授权码，下次使用时可手动复制并粘贴到左侧输入框。")
+            else:
+                st.caption("Please save this license key. You can copy and paste it into the left sidebar next time.")
+            if st.button("确定" if lang == "zh" else "OK"):
                 st.session_state.show_payment_dialog = False
                 st.session_state.payment_new_key = ""
                 st.rerun()
         payment_success_dialog()
 
-@st.dialog(" ")  # 空格占位符
+# ==================== 修复后的购买对话框（手动判断语言） ====================
+@st.dialog(" ")
 def purchase_dialog():
     lang = st.session_state.lang
-    st.markdown(f"### {t('purchase_dialog_title')}")
     if lang == "zh":
+        st.markdown("### 购买授权码")
         st.markdown("### 选择套餐")
         st.markdown("""
 | 套餐 | 价格 | 次数 | 有效期 |
@@ -550,7 +560,9 @@ def purchase_dialog():
 | 50次套餐 | 180元 / 30美元 | 50次 | 1个月 |
 | 1000次套餐 | 1200元 / 200美元 | 1000次 | 12个月 |
 """)
+        st.markdown("#### 💳 银行卡/数字钱包支付（Stripe）")
     else:
+        st.markdown("### Purchase License")
         st.markdown("### Select Plan")
         st.markdown("""
 | Plan | Price | Credits | Validity |
@@ -559,7 +571,7 @@ def purchase_dialog():
 | 50 Credits | 180 RMB / $30 | 50 uses | 1 month |
 | 1000 Credits | 1200 RMB / $200 | 1000 uses | 12 months |
 """)
-    st.markdown("#### 💳 " + ("银行卡/数字钱包支付（Stripe）" if lang=="zh" else "Card / Digital Wallet Payment (Stripe)"))
+        st.markdown("#### 💳 Card / Digital Wallet Payment (Stripe)")
     
     col1, col2, col3 = st.columns(3)
     
@@ -584,7 +596,10 @@ def purchase_dialog():
         button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🚀 {name} ${price}</a>'
         st.markdown(button_html, unsafe_allow_html=True)
     
-    st.markdown(t("payment_note"))
+    if lang == "zh":
+        st.markdown("支付成功后，您将收到授权码。请将授权码粘贴到左侧边栏输入框中即可解锁全部功能。")
+    else:
+        st.markdown("After successful payment, you will receive a license key. Please paste it into the left sidebar to unlock all features.")
 
 # ==================== 管理员设置弹窗 ====================
 @st.dialog(t("admin_settings"), width="large")
