@@ -348,6 +348,8 @@ if "show_payment_dialog" not in st.session_state:
     st.session_state.show_payment_dialog = False
 if "payment_new_key" not in st.session_state:
     st.session_state.payment_new_key = ""
+if "pending_lang" not in st.session_state:
+    st.session_state.pending_lang = None
 
 # ==================== 辅助函数 ====================
 def t(key):
@@ -492,7 +494,7 @@ PAYMENT_LINKS = {
 
 PLAN_MAPPING = {
     "single": "single",
-    "50": "50",
+    "100": "50",
     "1000": "1000"
 }
 
@@ -500,9 +502,18 @@ PLAN_MAPPING = {
 ADMIN_USERNAME = "Laurence_ku"
 ADMIN_PASSWORD = "Ku_product$2026"
 
-# ==================== 支付回调处理 ====================
+# ==================== 支付回调处理（修复语言保持） ====================
 def handle_payment_callback():
     params = st.query_params
+    # 恢复语言：优先从 URL 参数获取，否则从 pending_lang 获取
+    if "lang" in params:
+        lang_param = params["lang"]
+        if lang_param in ["zh", "en"]:
+            st.session_state.lang = lang_param
+    elif st.session_state.get("pending_lang") is not None:
+        st.session_state.lang = st.session_state.pending_lang
+        st.session_state.pending_lang = None  # 清除
+    # 处理支付成功
     if "order_success" in params and "plan" in params:
         plan_key = params["plan"]
         internal_plan = PLAN_MAPPING.get(plan_key)
@@ -523,7 +534,7 @@ def handle_payment_callback():
             st.error("无效的套餐类型。" if st.session_state.lang=="zh" else "Invalid plan type.")
             st.query_params.clear()
 
-# ==================== 修复后的支付成功弹窗（手动判断语言） ====================
+# ==================== 支付成功弹窗（手动语言） ====================
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
         @st.dialog(" ")
@@ -546,7 +557,7 @@ def show_payment_success_dialog():
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 修复后的购买对话框（手动判断语言） ====================
+# ==================== 购买对话框（手动语言，并附加语言参数） ====================
 @st.dialog(" ")
 def purchase_dialog():
     lang = st.session_state.lang
@@ -577,6 +588,10 @@ def purchase_dialog():
     
     with col1:
         url = PAYMENT_LINKS["single"]["url"]
+        if "?" in url:
+            url += f"&lang={lang}"
+        else:
+            url += f"?lang={lang}"
         name = PAYMENT_LINKS["single"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["single"]["name_en"]
         price = PAYMENT_LINKS["single"]["price_usd"]
         button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🎟️ {name} ${price}</a>'
@@ -584,6 +599,10 @@ def purchase_dialog():
     
     with col2:
         url = PAYMENT_LINKS["50"]["url"]
+        if "?" in url:
+            url += f"&lang={lang}"
+        else:
+            url += f"?lang={lang}"
         name = PAYMENT_LINKS["50"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["50"]["name_en"]
         price = PAYMENT_LINKS["50"]["price_usd"]
         button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">📦 {name} ${price}</a>'
@@ -591,6 +610,10 @@ def purchase_dialog():
     
     with col3:
         url = PAYMENT_LINKS["1000"]["url"]
+        if "?" in url:
+            url += f"&lang={lang}"
+        else:
+            url += f"?lang={lang}"
         name = PAYMENT_LINKS["1000"]["name_zh"] if lang=="zh" else PAYMENT_LINKS["1000"]["name_en"]
         price = PAYMENT_LINKS["1000"]["price_usd"]
         button_html = f'<a href="{url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">🚀 {name} ${price}</a>'
@@ -1254,7 +1277,9 @@ def main():
         if not is_premium_user(st.session_state.current_report_key):
             st.warning(t("trial_warning").format(st.session_state.trial_uses_left))
 
+        # 购买按钮：点击时记录当前语言
         if st.button(t("purchase_button"), key="purchase_btn", use_container_width=True):
+            st.session_state.pending_lang = st.session_state.lang
             purchase_dialog()
 
         st.markdown("---")
@@ -1485,7 +1510,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></table>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
