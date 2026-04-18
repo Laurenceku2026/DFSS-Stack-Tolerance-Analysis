@@ -462,10 +462,10 @@ def is_premium_user(report_key):
     # 试用期用户也可以下载报告（不消耗次数）
     return st.session_state.trial_uses_left > 0
 
-# ==================== 支付链接配置（请替换为您的实际 Stripe Payment Link URL） ====================
+# ==================== 支付链接配置 ====================
 PAYMENT_LINKS = {
     "single": {
-        "url": "https://buy.stripe.com/test_7sY8wPcYJ5Qu898cjO6Vq00",  # 替换为您的单次通行 Payment Link
+        "url": "https://buy.stripe.com/test_7sY8wPcYJ5Qu898cjO6Vq00",
         "name_zh": "单次通行",
         "name_en": "Single Pass",
         "price_usd": 3,
@@ -473,7 +473,7 @@ PAYMENT_LINKS = {
         "months": 9999
     },
     "50": {
-        "url": "https://buy.stripe.com/test_cNi3cv1g1a6KfBA6Zu6Vq01",  # 替换为您的50次套餐 Payment Link
+        "url": "https://buy.stripe.com/test_cNi3cv1g1a6KfBA6Zu6Vq01",
         "name_zh": "50次套餐",
         "name_en": "50 Credits",
         "price_usd": 30,
@@ -481,7 +481,7 @@ PAYMENT_LINKS = {
         "months": 1
     },
     "1000": {
-        "url": "https://buy.stripe.com/test_00wfZh6Alen0ahg2Je6Vq02",  # 替换为您的1000次套餐 Payment Link
+        "url": "https://buy.stripe.com/test_00wfZh6Alen0ahg2Je6Vq02",
         "name_zh": "1000次套餐",
         "name_en": "1000 Credits",
         "price_usd": 200,
@@ -490,10 +490,9 @@ PAYMENT_LINKS = {
     }
 }
 
-# 映射跳转URL中的plan参数到内部键（根据您的实际跳转参数调整）
 PLAN_MAPPING = {
     "single": "single",
-    "50": "50",      # 50次套餐跳转时使用 plan=100
+    "100": "50",
     "1000": "1000"
 }
 
@@ -526,9 +525,12 @@ def handle_payment_callback():
 
 def show_payment_success_dialog():
     if st.session_state.get("show_payment_dialog", False):
-        @st.dialog(t("payment_success_title"), width="small")
+        # 使用空标题，内部动态设置
+        @st.dialog("")
         def payment_success_dialog():
-            st.markdown(f"### {t('payment_success_msg')}")
+            # 动态显示标题
+            st.markdown(f"### {t('payment_success_title')}")
+            st.markdown(f"{t('payment_success_msg')}")
             st.code(st.session_state.payment_new_key, language="text")
             st.caption(t("payment_save_key"))
             if st.button(t("close")):
@@ -538,9 +540,11 @@ def show_payment_success_dialog():
         payment_success_dialog()
 
 # ==================== 购买对话框 ====================
-@st.dialog(t("purchase_dialog_title"), width="large")
+@st.dialog("")
 def purchase_dialog():
     lang = st.session_state.lang
+    # 动态标题
+    st.markdown(f"### {t('purchase_dialog_title')}")
     if lang == "zh":
         st.markdown("### 选择套餐")
         st.markdown("""
@@ -1096,7 +1100,6 @@ def main():
     handle_payment_callback()
     show_payment_success_dialog()
 
-    # 自定义 CSS（齿轮按钮透明、购买按钮红底白字）
     st.markdown("""
     <style>
         html, body, .stApp, .stMarkdown, .stText, .stNumberInput, .stSelectbox, .stTextArea, .stDataFrame, .stMetric {
@@ -1135,7 +1138,6 @@ def main():
             border-radius: 5px;
         }
         .lang-btn-wrap .stButton button:hover { background-color: #c82333 !important; }
-        /* 齿轮按钮透明无背景 */
         .gear-btn button {
             background-color: transparent !important;
             color: #555 !important;
@@ -1148,7 +1150,6 @@ def main():
             background-color: transparent !important;
             color: #000 !important;
         }
-        /* 侧边栏购买按钮红底白字 */
         section[data-testid="stSidebar"] .stButton button[key="purchase_btn"] {
             background-color: #dc3545 !important;
             color: white !important;
@@ -1169,7 +1170,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # 右上角语言切换 + 齿轮按钮（平齐）
+    # 右上角语言切换 + 齿轮按钮
     col_left, col_spacer, col_zh, col_en, col_gear = st.columns([0.5, 0.2, 0.15, 0.15, 0.08])
     with col_zh:
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
@@ -1249,7 +1250,7 @@ def main():
         st.markdown(f"**{t('contact')}**")
         st.markdown(t("email"))
 
-    # ==================== 参数输入表格（与原代码相同） ====================
+    # 参数输入表格
     st.markdown(f'<div class="section-header">{t("param_input")}</div>', unsafe_allow_html=True)
     header_cols = st.columns([0.3, 1.5, 1, 1, 1.2, 0.3])
     header_cols[0].markdown(f"**{t('letter')}**")
@@ -1360,7 +1361,7 @@ def main():
     st.session_state.params = pd.DataFrame(new_params)
     update_param_letters()
 
-    # ==================== 公式定义区域 ====================
+    # 公式定义区域
     st.markdown(f'<div class="section-header">{t("formula_def")}</div>', unsafe_allow_html=True)
     st.markdown(f'<span class="big-label">{t("design_var_name")}</span>', unsafe_allow_html=True)
     output_name = st.text_input("", value=st.session_state.output_name, key="output_name_input", label_visibility="collapsed")
@@ -1382,16 +1383,14 @@ def main():
     else:
         st.warning(t("formula_invalid"))
 
-    # ==================== 模拟按钮 ====================
+    # 模拟按钮
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button(t("start_sim"), type="primary", use_container_width=True):
-            # 授权检查
             if not is_premium_user(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
                 st.stop()
-            # 消耗次数
             if not consume_usage(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
@@ -1436,7 +1435,7 @@ def main():
                 "formula": formula,
             }
 
-    # ==================== 结果显示 ====================
+    # 结果显示
     if st.session_state.sim_results_raw is not None:
         raw = st.session_state.sim_results_raw
         results = raw["results"]
@@ -1502,7 +1501,6 @@ def main():
             csv = samples_df.to_csv(index=False, float_format="%.6f")
             st.download_button(t("download_csv"), data=csv, file_name=f"monte_carlo_data_{output_name}.csv", mime="text/csv")
 
-        # 下载报告：不消耗次数，但需要付费或试用期用户
         if st.button(t("download_report")):
             if not is_premium_user(st.session_state.current_report_key):
                 st.error(t("need_license"))
