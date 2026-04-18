@@ -137,7 +137,7 @@ TEXTS = {
         "expiry_label": "有效期至",
         "report_key_label": "授权码 (Report Key)",
         "no_license": "未输入授权码，当前为试用模式（本次会话剩余次数：{}）",
-        "trial_warning": "⚠️ 您还有 {} 次试用机会，输入授权码可解锁无限使用和下载功能。",
+        "trial_warning": "⚠️ 您还有 {} 次试用机会，输入授权码可解锁无限使用和下载功能。\n\n**提示：试用次数仅在当前浏览器会话有效，刷新页面将重置为3次。**",
         "purchase_button": "💰 购买授权码",
         "need_license": "⚠️ 请先购买授权码后再使用模拟功能。",
         "analyze_disabled": "您的免费次数已用完，请购买授权码后继续使用。",
@@ -166,6 +166,7 @@ TEXTS = {
         "export_keys": "📥 导出所有授权码为 Excel",
         "no_keys": "暂无授权码记录",
         "close": "确定",
+        "trial_refresh_note": "试用次数仅当前会话有效，刷新页面将恢复3次。",
     },
     "en": {
         "title": "📊 Para_Variation - Monte Carlo Simulation",
@@ -281,7 +282,7 @@ TEXTS = {
         "expiry_label": "Valid until",
         "report_key_label": "Report Key",
         "no_license": "No Report Key. Trial mode (remaining credits this session: {})",
-        "trial_warning": "⚠️ You have {} trial credits left. Enter a license key to unlock unlimited usage.",
+        "trial_warning": "⚠️ You have {} trial credits left. Enter a license key to unlock unlimited usage.\n\n**Note:** Trial credits are valid only for the current session. Refreshing the page resets them to 3.",
         "purchase_button": "💰 Purchase License",
         "need_license": "⚠️ Please purchase a license before using simulation.",
         "analyze_disabled": "Your free trial has expired. Please purchase a license to continue.",
@@ -310,6 +311,7 @@ TEXTS = {
         "export_keys": "📥 Export all keys to Excel",
         "no_keys": "No license keys yet.",
         "close": "OK",
+        "trial_refresh_note": "Trial credits are session-based; refreshing the page restores 3 credits.",
     }
 }
 
@@ -424,6 +426,7 @@ def activate_license(report_key):
     return False, 0, None, None
 
 def consume_usage(report_key):
+    """只在模拟时消耗次数，下载报告不消耗"""
     if st.session_state.get("admin_logged_in", False):
         return True
     if not report_key:
@@ -452,12 +455,14 @@ def get_remaining_info(report_key):
     return str(st.session_state.trial_uses_left), ("试用剩余次数" if st.session_state.lang=="zh" else "Trial left")
 
 def is_premium_user(report_key):
+    """检查是否已付费（付费用户或试用期用户），用于下载报告权限"""
     if st.session_state.get("admin_logged_in", False):
         return True
     if report_key:
         valid, _, _, _ = activate_license(report_key)
         return valid
-    return False
+    # 试用期用户也可以下载报告（不消耗次数）
+    return st.session_state.trial_uses_left > 0
 
 # ==================== 支付链接配置 ====================
 PAYMENT_LINKS = {
@@ -1110,6 +1115,7 @@ def main():
         }
         button[data-testid="baseButton-primary"]:hover { background-color: #c82333 !important; }
         button[data-testid="baseButton-primary"] * { white-space: pre-line !important; }
+        /* 辅助按钮样式 */
         .stButton > button:not([data-testid="baseButton-primary"]) {
             background-color: #3498db !important;
             color: white !important;
@@ -1117,6 +1123,7 @@ def main():
             border-radius: 5px;
         }
         .stButton > button:not([data-testid="baseButton-primary"]):hover { background-color: #2980b9 !important; }
+        /* 语言按钮包装样式 */
         .lang-btn-wrap .stButton button {
             background-color: #dc3545 !important;
             color: white !important;
@@ -1124,6 +1131,19 @@ def main():
             border-radius: 5px;
         }
         .lang-btn-wrap .stButton button:hover { background-color: #c82333 !important; }
+        /* 齿轮按钮单独样式：无背景色，灰色，字体放大 */
+        .gear-btn button {
+            background-color: transparent !important;
+            color: #555 !important;
+            font-size: 1.5rem !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+        }
+        .gear-btn button:hover {
+            background-color: transparent !important;
+            color: #000 !important;
+        }
         .design-value-card { background-color: #e8f4fd; border-radius: 10px; padding: 15px; margin-top: 15px; text-align: center; border-left: 5px solid #cccccc; }
         .design-value-card strong { font-size: 1.1rem; color: #000000; }
         .design-value-number { font-size: 1.6rem; font-weight: 600; color: #000000; margin-top: 5px; }
@@ -1133,23 +1153,25 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # 语言切换 + 设置按钮
-    col_lang1, col_lang2, col_lang3, col_gear = st.columns([0.6, 0.15, 0.15, 0.1])
-    with col_lang2:
+    # 右上角：语言切换 + 齿轮（调整列宽使按钮右对齐且平齐）
+    col_left, col_spacer, col_zh, col_en, col_gear = st.columns([0.5, 0.2, 0.15, 0.15, 0.08])
+    with col_zh:
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
         if st.button("中文", key="lang_zh", use_container_width=True):
             st.session_state.lang = "zh"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-    with col_lang3:
+    with col_en:
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
         if st.button("English", key="lang_en", use_container_width=True):
             st.session_state.lang = "en"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     with col_gear:
+        st.markdown('<div class="gear-btn">', unsafe_allow_html=True)
         if st.button("⚙️", key="settings_btn", use_container_width=True):
             admin_settings_dialog()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown(f'<div class="main-title">{t("title")}</div>', unsafe_allow_html=True)
     st.markdown(t("subtitle"))
@@ -1348,11 +1370,12 @@ def main():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button(t("start_sim"), type="primary", use_container_width=True):
+            # 检查是否有权限（付费用户或试用次数>0）
             if not is_premium_user(st.session_state.current_report_key):
-                if st.session_state.trial_uses_left <= 0:
-                    st.error(t("analyze_disabled"))
-                    purchase_dialog()
-                    st.stop()
+                st.error(t("analyze_disabled"))
+                purchase_dialog()
+                st.stop()
+            # 消耗次数（只有这里消耗，下载报告不消耗）
             if not consume_usage(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
@@ -1436,7 +1459,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
@@ -1463,6 +1486,7 @@ def main():
             csv = samples_df.to_csv(index=False, float_format="%.6f")
             st.download_button(t("download_csv"), data=csv, file_name=f"monte_carlo_data_{output_name}.csv", mime="text/csv")
 
+        # 下载报告：不消耗次数，但需要付费或试用期用户
         if st.button(t("download_report")):
             if not is_premium_user(st.session_state.current_report_key):
                 st.error(t("need_license"))
