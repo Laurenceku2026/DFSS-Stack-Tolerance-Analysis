@@ -1,4 +1,4 @@
-# app.py - 最终修复版（添加行即时显示正确语言）
+# app.py - 最终修复版（修复英文界面下分布配置无法展开的问题）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -386,7 +386,6 @@ def update_default_param_names_for_lang():
         current_name = row["参数名称"]
         if current_name == "新参数" or current_name == "New Parameter":
             st.session_state.params.at[idx, "参数名称"] = target_name
-            # 同步更新 session_state 中对应输入框的值
             key = f"param_name_{idx}"
             if key in st.session_state:
                 st.session_state[key] = target_name
@@ -1398,7 +1397,8 @@ def main():
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            stored_dist = row["分布"]
+            stored_dist = row["分布"]  # 存储值始终为中文
+            # 显示值根据语言映射
             if st.session_state.lang == "zh":
                 display_dist = stored_dist
             else:
@@ -1408,6 +1408,7 @@ def main():
             except ValueError:
                 dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
+            # 存储值始终为中文
             if st.session_state.lang == "zh":
                 stored_dist_val = dist_val
             else:
@@ -1423,23 +1424,24 @@ def main():
                 st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
-        if stored_dist_val != row["分布"]:
-            if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
+        # 如果分布类型改变了，重新初始化分布参数（基于存储的中文值）
+        if stored_dist_val != stored_dist:
+            if stored_dist_val == "均匀分布":
                 current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
-            elif stored_dist_val == t("dist_lognorm") or stored_dist_val == "Log-normal":
+            elif stored_dist_val == "对数正态分布":
                 current_dist_params = {"mean_log": 0.0, "sigma_log": 1.0}
-            elif stored_dist_val == t("dist_weibull") or stored_dist_val == "Weibull":
+            elif stored_dist_val == "威布尔分布":
                 current_dist_params = {"shape": 1.0, "scale": 1.0}
-            elif stored_dist_val == t("dist_tri") or stored_dist_val == "Triangular":
+            elif stored_dist_val == "三角分布":
                 current_dist_params = {"left": mean_val - 3 * std_val, "mode": mean_val, "right": mean_val + 3 * std_val}
             else:
                 current_dist_params = {}
 
-        need_expand = stored_dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")] or \
-                      stored_dist_val in ["Uniform", "Log-normal", "Weibull", "Triangular"]
+        # 判断是否需要 expander：直接基于存储的中文分布名称
+        need_expand = stored_dist_val in ["均匀分布", "对数正态分布", "威布尔分布", "三角分布"]
         if need_expand:
             with st.expander(t("configure").format(dist_val), expanded=True):
-                if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
+                if stored_dist_val == "均匀分布":
                     low = st.number_input(t("uniform_low"), value=float(current_dist_params.get("low", mean_val - 3*std_val)), key=f"uniform_low_{idx}", step=0.1)
                     high = st.number_input(t("uniform_high"), value=float(current_dist_params.get("high", mean_val + 3*std_val)), key=f"uniform_high_{idx}", step=0.1)
                     if low >= high:
@@ -1447,7 +1449,7 @@ def main():
                     else:
                         current_dist_params["low"] = low
                         current_dist_params["high"] = high
-                elif stored_dist_val == t("dist_lognorm") or stored_dist_val == "Log-normal":
+                elif stored_dist_val == "对数正态分布":
                     mean_log = st.number_input(t("lognorm_meanlog"), value=float(current_dist_params.get("mean_log", 0.0)), key=f"lognorm_meanlog_{idx}", step=0.1)
                     sigma_log = st.number_input(t("lognorm_sigmalog"), value=float(current_dist_params.get("sigma_log", 1.0)), key=f"lognorm_sigmalog_{idx}", step=0.05, format="%.3f")
                     if sigma_log <= 0:
@@ -1455,7 +1457,7 @@ def main():
                     else:
                         current_dist_params["mean_log"] = mean_log
                         current_dist_params["sigma_log"] = sigma_log
-                elif stored_dist_val == t("dist_weibull") or stored_dist_val == "Weibull":
+                elif stored_dist_val == "威布尔分布":
                     shape = st.number_input(t("weibull_shape"), value=float(current_dist_params.get("shape", 1.0)), key=f"weibull_shape_{idx}", step=0.1, min_value=0.1)
                     scale = st.number_input(t("weibull_scale"), value=float(current_dist_params.get("scale", 1.0)), key=f"weibull_scale_{idx}", step=0.1, min_value=0.1)
                     if shape <= 0 or scale <= 0:
@@ -1463,7 +1465,7 @@ def main():
                     else:
                         current_dist_params["shape"] = shape
                         current_dist_params["scale"] = scale
-                elif stored_dist_val == t("dist_tri") or stored_dist_val == "Triangular":
+                elif stored_dist_val == "三角分布":
                     left = st.number_input(t("tri_left"), value=float(current_dist_params.get("left", mean_val - 3*std_val)), key=f"tri_left_{idx}", step=0.1)
                     mode = st.number_input(t("tri_mode"), value=float(current_dist_params.get("mode", mean_val)), key=f"tri_mode_{idx}", step=0.1)
                     right = st.number_input(t("tri_right"), value=float(current_dist_params.get("right", mean_val + 3*std_val)), key=f"tri_right_{idx}", step=0.1)
@@ -1493,7 +1495,7 @@ def main():
     st.session_state.params = pd.DataFrame(new_params)
     update_param_letters()
 
-    # 添加行按钮：根据当前语言设置默认参数名称
+    # 添加行按钮
     if st.button(t("add_row"), use_container_width=True):
         default_name = "新参数" if st.session_state.lang == "zh" else "New Parameter"
         new_idx = len(st.session_state.params)
@@ -1656,7 +1658,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></td>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
