@@ -1,4 +1,4 @@
-# app.py - 最终修复版（语言切换即时更新表格，统一存储中文）
+# app.py - 最终修复版（语言切换时更新参数表中的默认名称）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -371,6 +371,17 @@ if "payment_new_key" not in st.session_state:
 # ==================== 辅助函数 ====================
 def t(key):
     return TEXTS[st.session_state.lang].get(key, key)
+
+def update_default_param_names_for_lang():
+    """当语言切换时，将参数名称中的默认值（'新参数' 或 'New Parameter'）统一更新为当前语言的默认名称"""
+    target_name = "新参数" if st.session_state.lang == "zh" else "New Parameter"
+    # 遍历所有参数名称，如果当前值是 '新参数' 或 'New Parameter'，则替换为目标语言值
+    # 注意：用户可能已经将默认值改成了其他名字，那些不应被覆盖
+    for idx, row in st.session_state.params.iterrows():
+        current_name = row["参数名称"]
+        if current_name == "新参数" or current_name == "New Parameter":
+            st.session_state.params.at[idx, "参数名称"] = target_name
+    update_param_letters()
 
 # ==================== 授权与试用数据管理 ====================
 USAGE_FILE = "usage_data.json"
@@ -1271,12 +1282,14 @@ def main():
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
         if st.button("中文", key="lang_zh", use_container_width=True):
             st.session_state.lang = "zh"
+            update_default_param_names_for_lang()  # 更新默认参数名称
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     with col_en:
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
         if st.button("English", key="lang_en", use_container_width=True):
             st.session_state.lang = "en"
+            update_default_param_names_for_lang()  # 更新默认参数名称
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     with col_gear:
@@ -1363,19 +1376,14 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            # 显示参数名称：如果存储值为“新参数”且当前语言为英文，显示 "New Parameter"；否则显示存储值
+            # 直接显示存储的参数名称（语言切换时已经更新了默认值）
             param_name_val = row["参数名称"]
-            if st.session_state.lang == "en" and param_name_val == "新参数":
-                display_name = "New Parameter"
-            else:
-                display_name = param_name_val
-            name = st.text_input("", value=display_name, key=f"param_name_{idx}", label_visibility="collapsed")
+            name = st.text_input("", value=param_name_val, key=f"param_name_{idx}", label_visibility="collapsed")
         with cols[2]:
             mean_val = st.number_input("", value=float(row["均值(Typ)"]), step=1.0, key=f"param_mean_{idx}", label_visibility="collapsed")
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            # 存储的分布值始终为中文，需要转换为当前语言显示
             stored_dist = row["分布"]
             if st.session_state.lang == "zh":
                 display_dist = stored_dist
@@ -1386,7 +1394,6 @@ def main():
             except ValueError:
                 dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
-            # 用户选择后，无论当前语言，都将选择值（可能是中文或英文）通过反向映射转回中文存储
             if st.session_state.lang == "zh":
                 stored_dist_val = dist_val
             else:
@@ -1399,7 +1406,6 @@ def main():
                 st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
-        # 如果分布类型改变了，重新初始化分布参数
         if stored_dist_val != stored_dist:
             if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                 current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
