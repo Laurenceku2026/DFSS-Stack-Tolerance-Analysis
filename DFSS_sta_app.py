@@ -1,4 +1,4 @@
-# app.py - 最终修复版（语言切换即时更新表格）
+# app.py - 最终修复版（语言切换即时更新表格，统一存储中文）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -836,7 +836,6 @@ def get_distributions():
         ]
 
 def generate_sample(dist: str, mean: float, std: float, dist_params: Dict, size: int = 1) -> np.ndarray:
-    # 根据语言转换分布名称（存储的是中文，但传入的可能是英文显示值）
     if "正态分布（完整）" in dist or "Normal (Full)" in dist:
         return np.random.normal(mean, std, size)
     elif "正态分布（正值）" in dist or "Normal (Positive only)" in dist:
@@ -953,7 +952,6 @@ def sensitivity_analysis(params_df: pd.DataFrame, formula: str, n_sim: int, para
     return df_contrib, contributions, param_names
 
 def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
-    # 根据语言转换分布名称（存储的是中文，但传入的可能是英文显示值）
     if "正态分布（完整）" in dist or "Normal (Full)" in dist:
         x = np.linspace(mean - 4*std, mean + 4*std, 200)
         y = stats.norm.pdf(x, mean, std)
@@ -1173,23 +1171,16 @@ def generate_word_report(raw, usl, lsl, n_sim, seed, formula, params_df, param_l
 
 # ==================== 辅助函数：过滤参数表，只保留公式中使用的字母对应的行 ====================
 def filter_params_by_formula(params_df: pd.DataFrame, formula: str, param_letters: Dict[str, str]) -> Tuple[pd.DataFrame, Dict[str, str]]:
-    """根据公式中出现的字母，过滤参数表，只保留需要的行，并返回过滤后的 DataFrame 和更新后的 param_letters"""
     letters_in_formula = set(re.findall(r'\b([A-Za-z])\b', formula))
     letters_in_formula = {l.upper() for l in letters_in_formula}
     
-    # 构建字母 -> 参数名称的映射
     letter_to_param = {letter: param_name for param_name, letter in param_letters.items()}
-    
-    # 找出需要保留的参数名称
     keep_param_names = []
     for letter in letters_in_formula:
         if letter in letter_to_param:
             keep_param_names.append(letter_to_param[letter])
     
-    # 过滤 DataFrame
     filtered_df = params_df[params_df["参数名称"].isin(keep_param_names)].copy()
-    
-    # 重建 param_letters 映射（只保留保留的参数）
     new_param_letters = {}
     for idx, row in filtered_df.iterrows():
         param_name = row["参数名称"]
@@ -1197,7 +1188,6 @@ def filter_params_by_formula(params_df: pd.DataFrame, formula: str, param_letter
             if pname == param_name:
                 new_param_letters[param_name] = letter
                 break
-    
     return filtered_df, new_param_letters
 
 # ==================== 主函数 ====================
@@ -1373,11 +1363,9 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            # 显示参数名称：如果存储值为“新参数”或“New Parameter”，根据当前语言显示对应版本
+            # 显示参数名称：如果存储值为“新参数”且当前语言为英文，显示 "New Parameter"；否则显示存储值
             param_name_val = row["参数名称"]
-            if st.session_state.lang == "zh" and param_name_val == "New Parameter":
-                display_name = "新参数"
-            elif st.session_state.lang == "en" and param_name_val == "新参数":
+            if st.session_state.lang == "en" and param_name_val == "新参数":
                 display_name = "New Parameter"
             else:
                 display_name = param_name_val
@@ -1387,24 +1375,20 @@ def main():
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            # 获取存储的分布值（始终为中文）
+            # 存储的分布值始终为中文，需要转换为当前语言显示
             stored_dist = row["分布"]
-            # 将存储的分布值标准化为当前语言对应的显示值，以便在下拉框中正确匹配
             if st.session_state.lang == "zh":
-                # 如果存储的是英文（异常情况），转回中文
-                normalized_dist = DIST_TRANSLATION_REVERSE.get(stored_dist, stored_dist)
+                display_dist = stored_dist
             else:
-                # 如果存储的是中文，转为英文
-                normalized_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
-            # 找到标准化后的值在列表中的索引
+                display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
             try:
-                dist_index = distributions_list.index(normalized_dist)
+                dist_index = distributions_list.index(display_dist)
             except ValueError:
                 dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
-            # 用户选择后，存储的值应该始终为中文（通过反向映射）
+            # 用户选择后，无论当前语言，都将选择值（可能是中文或英文）通过反向映射转回中文存储
             if st.session_state.lang == "zh":
-                stored_dist_val = dist_val  # 中文直接存储
+                stored_dist_val = dist_val
             else:
                 stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
         with cols[5]:
@@ -1415,7 +1399,7 @@ def main():
                 st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
-        # 如果分布类型改变了，可能需要重新初始化分布参数
+        # 如果分布类型改变了，重新初始化分布参数
         if stored_dist_val != stored_dist:
             if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                 current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
@@ -1431,7 +1415,6 @@ def main():
         need_expand = stored_dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")] or \
                       stored_dist_val in ["Uniform", "Log-normal", "Weibull", "Triangular"]
         if need_expand:
-            # 配置弹窗中的标签使用 t() 函数，已支持语言
             with st.expander(t("configure").format(dist_val), expanded=True):
                 if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                     low = st.number_input(t("uniform_low"), value=float(current_dist_params.get("low", mean_val - 3*std_val)), key=f"uniform_low_{idx}", step=0.1)
@@ -1488,19 +1471,13 @@ def main():
     st.session_state.params = pd.DataFrame(new_params)
     update_param_letters()
 
-    # 添加行按钮
+    # 添加行按钮：默认参数名称固定为“新参数”，分布固定为“正态分布（完整）”
     if st.button(t("add_row"), use_container_width=True):
-        if st.session_state.lang == "zh":
-            default_name = "新参数"
-            default_dist = "正态分布（完整）"
-        else:
-            default_name = "New Parameter"
-            default_dist = "Normal (Full)"
         new_row = pd.DataFrame({
-            "参数名称": [default_name],
+            "参数名称": ["新参数"],
             "均值(Typ)": [0.0],
             "标准差(Std)": [0.0],
-            "分布": [default_dist],
+            "分布": ["正态分布（完整）"],
             "分布参数": [{}]
         })
         st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
@@ -1552,11 +1529,9 @@ def main():
             letters_in_formula = set(re.findall(r'\b([A-Za-z])\b', formula))
             letters_in_formula = {l.upper() for l in letters_in_formula}
             
-            # 构建字母 -> 参数名称映射
             param_letters = st.session_state.param_letters
             letter_to_param = {letter: param_name for param_name, letter in param_letters.items()}
             
-            # 检查公式中的每个字母是否都有对应的参数行
             missing_letters = []
             for letter in letters_in_formula:
                 if letter not in letter_to_param:
@@ -1565,7 +1540,6 @@ def main():
                 st.error(t("letter_not_found").format(", ".join(missing_letters)))
                 st.stop()
             
-            # 检查这些参数行的值是否有效
             invalid_params = []
             for letter in letters_in_formula:
                 param_name = letter_to_param[letter]
@@ -1586,7 +1560,6 @@ def main():
                 st.stop()
             # ========== 结束参数检查 ==========
 
-            # 过滤参数表，只保留公式中使用的参数
             filtered_params_for_sim, filtered_letters_for_sim = filter_params_by_formula(
                 st.session_state.params, formula, st.session_state.param_letters
             )
@@ -1661,7 +1634,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
