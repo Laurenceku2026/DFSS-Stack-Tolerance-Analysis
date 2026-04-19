@@ -1,4 +1,4 @@
-# app.py - 最终修复版（支付后语言保持 + metadata 区分应用）
+# app.py - 最终修复版（支付后语言保持 + 参数有效性检查）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -167,6 +167,8 @@ TEXTS = {
         "export_keys": "📥 导出所有授权码为 Excel",
         "no_keys": "暂无授权码记录",
         "close": "确定",
+        "param_invalid_warning": "参数表格中存在无效行，请填写完整或删除后再模拟。",
+        "no_valid_params": "没有有效的参数，请至少添加一个完整参数行。",
     },
     "en": {
         "title": "📊 Para_Variation - Monte Carlo Simulation",
@@ -311,6 +313,8 @@ TEXTS = {
         "export_keys": "📥 Export all keys to Excel",
         "no_keys": "No license keys yet.",
         "close": "OK",
+        "param_invalid_warning": "There are invalid rows in the parameter table. Please complete or delete them before simulation.",
+        "no_valid_params": "No valid parameters. Please add at least one complete parameter row.",
     }
 }
 
@@ -476,12 +480,10 @@ ADMIN_PASSWORD = "Ku_product$2026"
 # ==================== 支付回调处理（从 URL 恢复语言） ====================
 def handle_payment_callback():
     params = st.query_params
-    # 第一步：从 URL 参数恢复语言（关键修复）
     if "lang" in params:
         lang_param = params["lang"]
         if lang_param in ["zh", "en"]:
             st.session_state.lang = lang_param
-    # 第二步：处理支付成功
     if "order_success" in params and "plan" in params:
         plan_key = params["plan"]
         if plan_key == "single":
@@ -530,7 +532,7 @@ def show_payment_success_dialog():
                 st.rerun()
         payment_success_dialog()
 
-# ==================== 购买对话框（success_url 携带语言参数，并添加 metadata 区分应用） ====================
+# ==================== 购买对话框 ====================
 @st.dialog(t("purchase_dialog_title"), width="large")
 def purchase_dialog():
     lang = st.session_state.lang
@@ -561,12 +563,11 @@ def purchase_dialog():
     
     col1, col2, col3 = st.columns(3)
     
-    # 单次通行
     with col1:
         if st.button("🎟️ " + (t("plan_single") + " $3"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card"],
+                    payment_method_types=["card", "alipay"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -578,11 +579,6 @@ def purchase_dialog():
                     mode="payment",
                     success_url=f"{base_url}/?order_success=1&plan=single&lang={lang}",
                     cancel_url=f"{base_url}/",
-                    metadata={
-                        "app_name": "DFSS",
-                        "app_version": "1.0",
-                        "plan": "single"
-                    }
                 )
                 st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
                 button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
@@ -590,12 +586,11 @@ def purchase_dialog():
             except Exception as e:
                 st.error(f"创建支付会话失败: {e}" if lang=="zh" else f"Failed to create checkout session: {e}")
     
-    # 50次套餐
     with col2:
         if st.button("📦 " + (t("plan_50") + " $30"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card"],
+                    payment_method_types=["card", "alipay"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -607,11 +602,6 @@ def purchase_dialog():
                     mode="payment",
                     success_url=f"{base_url}/?order_success=1&plan=50&lang={lang}",
                     cancel_url=f"{base_url}/",
-                    metadata={
-                        "app_name": "DFSS",
-                        "app_version": "1.0",
-                        "plan": "50"
-                    }
                 )
                 st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
                 button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
@@ -619,12 +609,11 @@ def purchase_dialog():
             except Exception as e:
                 st.error(f"创建支付会话失败: {e}" if lang=="zh" else f"Failed to create checkout session: {e}")
     
-    # 1000次套餐
     with col3:
         if st.button("🚀 " + (t("plan_1000") + " $200"), use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=["card"],
+                    payment_method_types=["card", "alipay"],
                     line_items=[{
                         "price_data": {
                             "currency": "usd",
@@ -636,11 +625,6 @@ def purchase_dialog():
                     mode="payment",
                     success_url=f"{base_url}/?order_success=1&plan=1000&lang={lang}",
                     cancel_url=f"{base_url}/",
-                    metadata={
-                        "app_name": "DFSS",
-                        "app_version": "1.0",
-                        "plan": "1000"
-                    }
                 )
                 st.success("✅ " + ("支付链接已生成，请点击下方按钮完成支付" if lang=="zh" else "Payment link generated. Click below to pay."))
                 button_html = f'<a href="{checkout_session.url}" target="_blank" style="display: block; background-color: #E60000; color: white; font-weight: bold; font-size: 18px; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; width: 100%;">{"前往 Stripe 支付页面" if lang=="zh" else "Go to Stripe Payment Page"}</a>'
@@ -1452,6 +1436,7 @@ def main():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button(t("start_sim"), type="primary", use_container_width=True):
+            # 授权检查
             if not is_premium_user(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
@@ -1460,6 +1445,29 @@ def main():
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
                 st.stop()
+
+            # 新增：检查参数表格有效性
+            invalid_rows = []
+            for idx, row in st.session_state.params.iterrows():
+                param_name = str(row["参数名称"]).strip()
+                mean_val = row["均值(Typ)"]
+                std_val = row["标准差(Std)"]
+                if param_name == "" or pd.isna(mean_val) or pd.isna(std_val):
+                    invalid_rows.append(idx+1)  # 行号从1开始
+            if invalid_rows:
+                st.error(f"{t('param_invalid_warning')} (行: {invalid_rows})")
+                st.stop()
+            if len(st.session_state.params) == 0:
+                st.error(t("no_valid_params"))
+                st.stop()
+
+            # 检查公式中的字母是否都存在于参数中
+            letters_in_formula = re.findall(r'\b([A-Za-z])\b', formula)
+            param_letters_set = set(st.session_state.param_letters.values())
+            for letter in letters_in_formula:
+                if letter not in param_letters_set:
+                    st.error(f"公式中使用了未定义的字母 '{letter}'，请检查参数表格。")
+                    st.stop()
 
             if st.session_state.params.isnull().values.any():
                 st.error(t("formula_invalid"))
