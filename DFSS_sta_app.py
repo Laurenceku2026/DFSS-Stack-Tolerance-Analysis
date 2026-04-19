@@ -1,4 +1,4 @@
-# app.py - 最终修复版（支付后语言保持 + 智能参数有效性检查）
+# app.py - 最终修复版（智能参数检查 + 添加行即时生效）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1400,14 +1400,19 @@ def main():
                 "分布": dist_val,
                 "分布参数": dist_params
             })
+    
+    # 优化添加行按钮：直接修改 session state 并 rerun
     if st.button(t("add_row"), use_container_width=True):
-        new_params.append({
-            "参数名称": t("new_param_default"),
-            "均值(Typ)": 0.0,
-            "标准差(Std)": 0.0,
-            "分布": t("dist_full"),
-            "分布参数": {}
+        new_row = pd.DataFrame({
+            "参数名称": [t("new_param_default")],
+            "均值(Typ)": [0.0],
+            "标准差(Std)": [0.0],
+            "分布": [t("dist_full")],
+            "分布参数": [{}]
         })
+        st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
+        update_param_letters()
+        st.rerun()
 
     st.session_state.params = pd.DataFrame(new_params)
     update_param_letters()
@@ -1484,15 +1489,12 @@ def main():
                     st.error(t("param_missing_for_letter").format(letter, row_num))
                 st.stop()
             
-            # 5. 可选：检查公式是否为空
+            # 5. 检查公式是否为空
             if not formula.strip():
                 st.error(t("formula_invalid"))
                 st.stop()
             
-            # 原有检查（保留，但已被上述逻辑覆盖，可简化）
-            if st.session_state.params.isnull().values.any():
-                st.error(t("formula_invalid"))
-                st.stop()
+            # 原有检查（保留必要的）
             param_names = st.session_state.params["参数名称"].astype(str).tolist()
             if len(set(param_names)) != len(param_names):
                 st.error(t("formula_invalid"))
@@ -1566,7 +1568,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
