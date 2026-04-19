@@ -1,4 +1,4 @@
-# app.py - 最终修复版（智能参数检查 + 添加行即时生效）
+# app.py - 最终版（智能参数检查 + 快速删除 + 模拟前过滤）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1146,6 +1146,36 @@ def generate_word_report(raw, usl, lsl, n_sim, seed, formula, params_df, param_l
     doc_bytes.seek(0)
     return doc_bytes
 
+# ==================== 辅助函数：过滤参数表，只保留公式中使用的字母对应的行 ====================
+def filter_params_by_formula(params_df: pd.DataFrame, formula: str, param_letters: Dict[str, str]) -> Tuple[pd.DataFrame, Dict[str, str]]:
+    """根据公式中出现的字母，过滤参数表，只保留需要的行，并返回过滤后的 DataFrame 和更新后的 param_letters"""
+    letters_in_formula = set(re.findall(r'\b([A-Za-z])\b', formula))
+    letters_in_formula = {l.upper() for l in letters_in_formula}
+    
+    # 构建字母 -> 参数名称的映射
+    letter_to_param = {letter: param_name for param_name, letter in param_letters.items()}
+    
+    # 找出需要保留的参数名称
+    keep_param_names = []
+    for letter in letters_in_formula:
+        if letter in letter_to_param:
+            keep_param_names.append(letter_to_param[letter])
+    
+    # 过滤 DataFrame
+    filtered_df = params_df[params_df["参数名称"].isin(keep_param_names)].copy()
+    
+    # 重建 param_letters 映射（只保留保留的参数）
+    new_param_letters = {}
+    for idx, row in filtered_df.iterrows():
+        param_name = row["参数名称"]
+        # 找到对应的字母
+        for letter, pname in letter_to_param.items():
+            if pname == param_name:
+                new_param_letters[param_name] = letter
+                break
+    
+    return filtered_df, new_param_letters
+
 # ==================== 主函数 ====================
 def main():
     handle_payment_callback()
@@ -1327,7 +1357,12 @@ def main():
         with cols[4]:
             dist_val = st.selectbox("", distributions_list, index=distributions_list.index(row["分布"]) if row["分布"] in distributions_list else 0, key=f"param_dist_{idx}", label_visibility="collapsed")
         with cols[5]:
-            delete = st.button("🗑️", key=f"del_{idx}")
+            # 删除按钮：直接删除该行
+            if st.button("🗑️", key=f"del_{idx}"):
+                st.session_state.params.drop(index=idx, inplace=True)
+                st.session_state.params.reset_index(drop=True, inplace=True)
+                update_param_letters()
+                st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
         if dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")]:
@@ -1388,20 +1423,22 @@ def main():
                 st.pyplot(fig)
                 plt.close(fig)
 
-        rows_data.append((name, mean_val, std_val, dist_val, current_dist_params, delete, letter))
+        rows_data.append((name, mean_val, std_val, dist_val, current_dist_params, letter))
 
+    # 更新参数表（编辑后的值）
     new_params = []
-    for (name, mean_val, std_val, dist_val, dist_params, delete, letter) in rows_data:
-        if not delete:
-            new_params.append({
-                "参数名称": name,
-                "均值(Typ)": mean_val,
-                "标准差(Std)": std_val,
-                "分布": dist_val,
-                "分布参数": dist_params
-            })
-    
-    # 优化添加行按钮：直接修改 session state 并 rerun
+    for (name, mean_val, std_val, dist_val, dist_params, letter) in rows_data:
+        new_params.append({
+            "参数名称": name,
+            "均值(Typ)": mean_val,
+            "标准差(Std)": std_val,
+            "分布": dist_val,
+            "分布参数": dist_params
+        })
+    st.session_state.params = pd.DataFrame(new_params)
+    update_param_letters()
+
+    # 添加行按钮
     if st.button(t("add_row"), use_container_width=True):
         new_row = pd.DataFrame({
             "参数名称": [t("new_param_default")],
@@ -1414,9 +1451,6 @@ def main():
         update_param_letters()
         st.rerun()
 
-    st.session_state.params = pd.DataFrame(new_params)
-    update_param_letters()
-
     # 公式定义区域
     st.markdown(f'<div class="section-header">{t("formula_def")}</div>', unsafe_allow_html=True)
     st.markdown(f'<span class="big-label">{t("design_var_name")}</span>', unsafe_allow_html=True)
@@ -1428,14 +1462,19 @@ def main():
     st.session_state.formula = formula
     st.caption(t("formula_supported"))
 
-    design_val = compute_design_value(st.session_state.params, formula, st.session_state.param_letters)
-    if design_val is not None and not np.isnan(design_val):
-        st.markdown(f"""
-        <div class="design-value-card">
-            <strong>{t("design_value")}</strong><br>
-            <span class="design-value-number">{output_name} = {design_val:.2f}</span>
-        </div>
-        """, unsafe_allow_html=True)
+    # 设计值计算（使用过滤后的参数表，只考虑公式中出现的字母）
+    filtered_params, filtered_letters = filter_params_by_formula(st.session_state.params, formula, st.session_state.param_letters)
+    if len(filtered_params) > 0:
+        design_val = compute_design_value(filtered_params, formula, filtered_letters)
+        if design_val is not None and not np.isnan(design_val):
+            st.markdown(f"""
+            <div class="design-value-card">
+                <strong>{t("design_value")}</strong><br>
+                <span class="design-value-number">{output_name} = {design_val:.2f}</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning(t("formula_invalid"))
     else:
         st.warning(t("formula_invalid"))
 
@@ -1453,61 +1492,60 @@ def main():
                 purchase_dialog()
                 st.stop()
 
-            # ========== 智能参数有效性检查 ==========
-            # 1. 提取公式中所有字母（A-Z，不区分大小写，转为大写）
+            # ========== 智能参数有效性检查（只检查公式中出现的字母） ==========
             letters_in_formula = set(re.findall(r'\b([A-Za-z])\b', formula))
             letters_in_formula = {l.upper() for l in letters_in_formula}
             
-            # 2. 获取参数字母映射（参数名称 -> 字母）
+            # 构建字母 -> 参数名称映射
             param_letters = st.session_state.param_letters
-            # 构建字母 -> 行索引的映射
-            letter_to_idx = {}
-            for idx, (param_name, letter) in enumerate(param_letters.items()):
-                letter_to_idx[letter] = idx
+            letter_to_param = {letter: param_name for param_name, letter in param_letters.items()}
             
-            # 3. 检查公式中的每个字母是否都有对应的参数行
+            # 检查公式中的每个字母是否都有对应的参数行
             missing_letters = []
             for letter in letters_in_formula:
-                if letter not in letter_to_idx:
+                if letter not in letter_to_param:
                     missing_letters.append(letter)
             if missing_letters:
                 st.error(t("letter_not_found").format(", ".join(missing_letters)))
                 st.stop()
             
-            # 4. 只检查公式中使用的字母对应的参数行是否有效
+            # 检查这些参数行的值是否有效
             invalid_params = []
             for letter in letters_in_formula:
-                idx = letter_to_idx[letter]
-                row_data = st.session_state.params.iloc[idx]
-                param_name = str(row_data["参数名称"]).strip()
-                mean_val = row_data["均值(Typ)"]
-                std_val = row_data["标准差(Std)"]
-                if param_name == "" or pd.isna(mean_val) or pd.isna(std_val):
-                    invalid_params.append((letter, idx+1))  # 行号从1开始
+                param_name = letter_to_param[letter]
+                row = st.session_state.params[st.session_state.params["参数名称"] == param_name].iloc[0]
+                param_name_val = str(row["参数名称"]).strip()
+                mean_val = row["均值(Typ)"]
+                std_val = row["标准差(Std)"]
+                if param_name_val == "" or pd.isna(mean_val) or pd.isna(std_val):
+                    # 找到行号
+                    idx = st.session_state.params[st.session_state.params["参数名称"] == param_name].index[0]
+                    invalid_params.append((letter, idx+1))
             if invalid_params:
                 for letter, row_num in invalid_params:
                     st.error(t("param_missing_for_letter").format(letter, row_num))
                 st.stop()
             
-            # 5. 检查公式是否为空
             if not formula.strip():
-                st.error(t("formula_invalid"))
-                st.stop()
-            
-            # 原有检查（保留必要的）
-            param_names = st.session_state.params["参数名称"].astype(str).tolist()
-            if len(set(param_names)) != len(param_names):
                 st.error(t("formula_invalid"))
                 st.stop()
             # ========== 结束参数检查 ==========
 
+            # 过滤参数表，只保留公式中使用的参数
+            filtered_params_for_sim, filtered_letters_for_sim = filter_params_by_formula(
+                st.session_state.params, formula, st.session_state.param_letters
+            )
+            if len(filtered_params_for_sim) == 0:
+                st.error(t("no_valid_params"))
+                st.stop()
+
             with st.spinner(t("start_sim")):
-                sim_res = run_monte_carlo(st.session_state.params, formula, n_sim, st.session_state.param_letters, seed)
+                sim_res = run_monte_carlo(filtered_params_for_sim, formula, n_sim, filtered_letters_for_sim, seed)
             if sim_res is None:
                 st.stop()
 
             with st.spinner(t("start_sim")):
-                df_contrib, contributions, param_names = sensitivity_analysis(st.session_state.params, formula, n_sim, st.session_state.param_letters, seed)
+                df_contrib, contributions, param_names = sensitivity_analysis(filtered_params_for_sim, formula, n_sim, filtered_letters_for_sim, seed)
 
             st.session_state.sim_results_raw = {
                 "results": sim_res["results"],
@@ -1524,7 +1562,7 @@ def main():
                 "param_names": sim_res["param_names"],
                 "df_contrib": df_contrib,
                 "contributions": contributions,
-                "params_df": st.session_state.params,
+                "params_df": filtered_params_for_sim,
                 "output_name": output_name,
                 "formula": formula,
             }
@@ -1568,7 +1606,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
@@ -1600,7 +1638,7 @@ def main():
                 st.error(t("need_license"))
                 purchase_dialog()
             else:
-                doc_bytes = generate_word_report(raw, usl, lsl, n_sim, seed, formula, st.session_state.params, st.session_state.param_letters, st.session_state.analyst_name, st.session_state.analyst_title, output_name)
+                doc_bytes = generate_word_report(raw, usl, lsl, n_sim, seed, formula, raw["params_df"], st.session_state.param_letters, st.session_state.analyst_name, st.session_state.analyst_title, output_name)
                 date_str = datetime.now().strftime("%Y%m%d")
                 st.download_button(t("download_report"), data=doc_bytes, file_name=f"DFSS_Report_{output_name}_{date_str}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         st.success(t("success"))
