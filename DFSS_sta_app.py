@@ -1,4 +1,4 @@
-# app.py - 最终修复版（支付后语言保持 + 参数有效性检查）
+# app.py - 最终修复版（支付后语言保持 + 智能参数有效性检查）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -167,8 +167,9 @@ TEXTS = {
         "export_keys": "📥 导出所有授权码为 Excel",
         "no_keys": "暂无授权码记录",
         "close": "确定",
-        "param_invalid_warning": "参数表格中存在无效行，请填写完整或删除后再模拟。",
-        "no_valid_params": "没有有效的参数，请至少添加一个完整参数行。",
+        "param_missing_for_letter": "公式中的字母 '{}' 对应的参数（行号 {}）缺少有效的参数名称、均值或标准差，请填写完整。",
+        "letter_not_found": "公式中使用了未定义的字母 '{}'，请检查参数表格或修改公式。",
+        "no_valid_params": "没有有效的参数（公式中的字母未在参数表中找到）。",
     },
     "en": {
         "title": "📊 Para_Variation - Monte Carlo Simulation",
@@ -313,8 +314,9 @@ TEXTS = {
         "export_keys": "📥 Export all keys to Excel",
         "no_keys": "No license keys yet.",
         "close": "OK",
-        "param_invalid_warning": "There are invalid rows in the parameter table. Please complete or delete them before simulation.",
-        "no_valid_params": "No valid parameters. Please add at least one complete parameter row.",
+        "param_missing_for_letter": "Parameter for letter '{}' (row {}) is missing valid name, mean, or std. Please complete it.",
+        "letter_not_found": "Undefined letter '{}' used in formula. Please check parameter table or modify formula.",
+        "no_valid_params": "No valid parameters (letters in formula not found in parameter table).",
     }
 }
 
@@ -1446,29 +1448,48 @@ def main():
                 purchase_dialog()
                 st.stop()
 
-            # 新增：检查参数表格有效性
-            invalid_rows = []
-            for idx, row in st.session_state.params.iterrows():
-                param_name = str(row["参数名称"]).strip()
-                mean_val = row["均值(Typ)"]
-                std_val = row["标准差(Std)"]
-                if param_name == "" or pd.isna(mean_val) or pd.isna(std_val):
-                    invalid_rows.append(idx+1)  # 行号从1开始
-            if invalid_rows:
-                st.error(f"{t('param_invalid_warning')} (行: {invalid_rows})")
-                st.stop()
-            if len(st.session_state.params) == 0:
-                st.error(t("no_valid_params"))
-                st.stop()
-
-            # 检查公式中的字母是否都存在于参数中
-            letters_in_formula = re.findall(r'\b([A-Za-z])\b', formula)
-            param_letters_set = set(st.session_state.param_letters.values())
+            # ========== 智能参数有效性检查 ==========
+            # 1. 提取公式中所有字母（A-Z，不区分大小写，转为大写）
+            letters_in_formula = set(re.findall(r'\b([A-Za-z])\b', formula))
+            letters_in_formula = {l.upper() for l in letters_in_formula}
+            
+            # 2. 获取参数字母映射（参数名称 -> 字母）
+            param_letters = st.session_state.param_letters
+            # 构建字母 -> 行索引的映射
+            letter_to_idx = {}
+            for idx, (param_name, letter) in enumerate(param_letters.items()):
+                letter_to_idx[letter] = idx
+            
+            # 3. 检查公式中的每个字母是否都有对应的参数行
+            missing_letters = []
             for letter in letters_in_formula:
-                if letter not in param_letters_set:
-                    st.error(f"公式中使用了未定义的字母 '{letter}'，请检查参数表格。")
-                    st.stop()
-
+                if letter not in letter_to_idx:
+                    missing_letters.append(letter)
+            if missing_letters:
+                st.error(t("letter_not_found").format(", ".join(missing_letters)))
+                st.stop()
+            
+            # 4. 只检查公式中使用的字母对应的参数行是否有效
+            invalid_params = []
+            for letter in letters_in_formula:
+                idx = letter_to_idx[letter]
+                row_data = st.session_state.params.iloc[idx]
+                param_name = str(row_data["参数名称"]).strip()
+                mean_val = row_data["均值(Typ)"]
+                std_val = row_data["标准差(Std)"]
+                if param_name == "" or pd.isna(mean_val) or pd.isna(std_val):
+                    invalid_params.append((letter, idx+1))  # 行号从1开始
+            if invalid_params:
+                for letter, row_num in invalid_params:
+                    st.error(t("param_missing_for_letter").format(letter, row_num))
+                st.stop()
+            
+            # 5. 可选：检查公式是否为空
+            if not formula.strip():
+                st.error(t("formula_invalid"))
+                st.stop()
+            
+            # 原有检查（保留，但已被上述逻辑覆盖，可简化）
             if st.session_state.params.isnull().values.any():
                 st.error(t("formula_invalid"))
                 st.stop()
@@ -1476,9 +1497,7 @@ def main():
             if len(set(param_names)) != len(param_names):
                 st.error(t("formula_invalid"))
                 st.stop()
-            if not formula.strip():
-                st.error(t("formula_invalid"))
-                st.stop()
+            # ========== 结束参数检查 ==========
 
             with st.spinner(t("start_sim")):
                 sim_res = run_monte_carlo(st.session_state.params, formula, n_sim, st.session_state.param_letters, seed)
