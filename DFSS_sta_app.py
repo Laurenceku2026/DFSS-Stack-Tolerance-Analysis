@@ -1,4 +1,4 @@
-# app.py - 最终版（智能参数检查 + 快速删除 + 模拟前过滤）
+# app.py - 最终版（全英文支持 + 智能参数检查 + 快速删除/添加）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -319,6 +319,19 @@ TEXTS = {
         "no_valid_params": "No valid parameters (letters in formula not found in parameter table).",
     }
 }
+
+# 分布中英文映射
+DIST_TRANSLATION = {
+    "正态分布（完整）": "Normal (Full)",
+    "正态分布（正值）": "Normal (Positive only)",
+    "正态分布（负值）": "Normal (Negative only)",
+    "均匀分布": "Uniform",
+    "对数正态分布": "Log-normal",
+    "威布尔分布": "Weibull",
+    "三角分布": "Triangular",
+}
+# 反向映射
+DIST_TRANSLATION_REVERSE = {v: k for k, v in DIST_TRANSLATION.items()}
 
 # ==================== 初始化 Session State ====================
 if "lang" not in st.session_state:
@@ -802,42 +815,55 @@ def compute_design_value(params_df: pd.DataFrame, formula: str, param_letters: D
     return val if not np.isnan(val) else None
 
 def get_distributions():
-    return [
-        t("dist_full"),
-        t("dist_pos"),
-        t("dist_neg"),
-        t("dist_uniform"),
-        t("dist_lognorm"),
-        t("dist_weibull"),
-        t("dist_tri")
-    ]
+    if st.session_state.lang == "zh":
+        return [
+            t("dist_full"),
+            t("dist_pos"),
+            t("dist_neg"),
+            t("dist_uniform"),
+            t("dist_lognorm"),
+            t("dist_weibull"),
+            t("dist_tri")
+        ]
+    else:
+        return [
+            "Normal (Full)",
+            "Normal (Positive only)",
+            "Normal (Negative only)",
+            "Uniform",
+            "Log-normal",
+            "Weibull",
+            "Triangular"
+        ]
 
 def generate_sample(dist: str, mean: float, std: float, dist_params: Dict, size: int = 1) -> np.ndarray:
-    if dist == t("dist_full"):
+    # 根据语言转换分布名称（存储的是中文，但传入的可能是英文显示值，需要转换为存储值）
+    # 为简化，我们直接根据 dist 字符串判断
+    if "正态分布（完整）" in dist or "Normal (Full)" in dist:
         return np.random.normal(mean, std, size)
-    elif dist == t("dist_pos"):
+    elif "正态分布（正值）" in dist or "Normal (Positive only)" in dist:
         a, b = (0 - mean) / std if std > 0 else -np.inf, np.inf
         if std == 0:
             return np.full(size, max(mean, 0))
         return stats.truncnorm.rvs(a, b, loc=mean, scale=std, size=size)
-    elif dist == t("dist_neg"):
+    elif "正态分布（负值）" in dist or "Normal (Negative only)" in dist:
         a, b = -np.inf, (0 - mean) / std if std > 0 else np.inf
         if std == 0:
             return np.full(size, min(mean, 0))
         return stats.truncnorm.rvs(a, b, loc=mean, scale=std, size=size)
-    elif dist == t("dist_uniform"):
+    elif "均匀分布" in dist or "Uniform" in dist:
         low = dist_params.get("low", mean - 3*std)
         high = dist_params.get("high", mean + 3*std)
         return np.random.uniform(low, high, size)
-    elif dist == t("dist_lognorm"):
+    elif "对数正态分布" in dist or "Log-normal" in dist:
         mean_log = dist_params.get("mean_log", 0.0)
         sigma_log = dist_params.get("sigma_log", 1.0)
         return np.random.lognormal(mean_log, sigma_log, size)
-    elif dist == t("dist_weibull"):
+    elif "威布尔分布" in dist or "Weibull" in dist:
         shape = dist_params.get("shape", 1.0)
         scale = dist_params.get("scale", 1.0)
         return np.random.weibull(shape, size) * scale
-    elif dist == t("dist_tri"):
+    elif "三角分布" in dist or "Triangular" in dist:
         left = dist_params.get("left", mean - 3*std)
         mode = dist_params.get("mode", mean)
         right = dist_params.get("right", mean + 3*std)
@@ -929,13 +955,14 @@ def sensitivity_analysis(params_df: pd.DataFrame, formula: str, n_sim: int, para
     return df_contrib, contributions, param_names
 
 def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
-    if dist == t("dist_full"):
+    # 根据语言转换分布名称（存储的是中文，但传入的可能是英文显示值）
+    if "正态分布（完整）" in dist or "Normal (Full)" in dist:
         x = np.linspace(mean - 4*std, mean + 4*std, 200)
         y = stats.norm.pdf(x, mean, std)
         ax.plot(x, y, 'b-')
         ax.fill_between(x, y, alpha=0.3)
         ax.set_title(f"N(μ={mean:.1f}, σ={std:.2f})", fontsize=8)
-    elif dist == t("dist_pos"):
+    elif "正态分布（正值）" in dist or "Normal (Positive only)" in dist:
         a, b = (0 - mean) / std if std > 0 else -np.inf, np.inf
         if std == 0:
             x = [max(mean, 0)]
@@ -946,7 +973,7 @@ def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
         ax.plot(x, y, 'g-')
         ax.fill_between(x, y, alpha=0.3)
         ax.set_title(f"TruncNorm(≥0)", fontsize=8)
-    elif dist == t("dist_neg"):
+    elif "正态分布（负值）" in dist or "Normal (Negative only)" in dist:
         a, b = -np.inf, (0 - mean) / std if std > 0 else np.inf
         if std == 0:
             x = [min(mean, 0)]
@@ -957,7 +984,7 @@ def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
         ax.plot(x, y, 'r-')
         ax.fill_between(x, y, alpha=0.3)
         ax.set_title(f"TruncNorm(≤0)", fontsize=8)
-    elif dist == t("dist_uniform"):
+    elif "均匀分布" in dist or "Uniform" in dist:
         low = dist_params.get("low", mean - 3*std)
         high = dist_params.get("high", mean + 3*std)
         x = np.linspace(low, high, 200)
@@ -965,7 +992,7 @@ def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
         ax.plot(x, y, 'purple')
         ax.fill_between(x, y, alpha=0.3)
         ax.set_title(f"U({low:.1f}, {high:.1f})", fontsize=8)
-    elif dist == t("dist_lognorm"):
+    elif "对数正态分布" in dist or "Log-normal" in dist:
         mean_log = dist_params.get("mean_log", 0.0)
         sigma_log = dist_params.get("sigma_log", 1.0)
         x = np.linspace(0, np.exp(mean_log + 3*sigma_log), 200)
@@ -973,7 +1000,7 @@ def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
         ax.plot(x, y, 'orange')
         ax.fill_between(x, y, alpha=0.3)
         ax.set_title(f"LogN(μlog={mean_log:.1f}, σlog={sigma_log:.2f})", fontsize=8)
-    elif dist == t("dist_weibull"):
+    elif "威布尔分布" in dist or "Weibull" in dist:
         shape = dist_params.get("shape", 1.0)
         scale = dist_params.get("scale", 1.0)
         x = np.linspace(0, scale * 3, 200)
@@ -981,7 +1008,7 @@ def plot_pdf(dist: str, mean: float, std: float, dist_params: Dict, ax):
         ax.plot(x, y, 'brown')
         ax.fill_between(x, y, alpha=0.3)
         ax.set_title(f"Weibull(k={shape:.1f}, λ={scale:.1f})", fontsize=8)
-    elif dist == t("dist_tri"):
+    elif "三角分布" in dist or "Triangular" in dist:
         left = dist_params.get("left", mean - 3*std)
         mode = dist_params.get("mode", mean)
         right = dist_params.get("right", mean + 3*std)
@@ -1168,7 +1195,6 @@ def filter_params_by_formula(params_df: pd.DataFrame, formula: str, param_letter
     new_param_letters = {}
     for idx, row in filtered_df.iterrows():
         param_name = row["参数名称"]
-        # 找到对应的字母
         for letter, pname in letter_to_param.items():
             if pname == param_name:
                 new_param_letters[param_name] = letter
@@ -1349,15 +1375,41 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            name = st.text_input("", value=row["参数名称"], key=f"param_name_{idx}", label_visibility="collapsed")
+            # 显示参数名称：如果是默认中文“新参数”且当前语言为英文，显示 "New Parameter"，否则显示存储值
+            param_name_val = row["参数名称"]
+            if st.session_state.lang == "en" and param_name_val == "新参数":
+                display_name = "New Parameter"
+            else:
+                display_name = param_name_val
+            name = st.text_input("", value=display_name, key=f"param_name_{idx}", label_visibility="collapsed")
         with cols[2]:
             mean_val = st.number_input("", value=float(row["均值(Typ)"]), step=1.0, key=f"param_mean_{idx}", label_visibility="collapsed")
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            dist_val = st.selectbox("", distributions_list, index=distributions_list.index(row["分布"]) if row["分布"] in distributions_list else 0, key=f"param_dist_{idx}", label_visibility="collapsed")
+            # 获取存储的分布中文值
+            stored_dist = row["分布"]
+            # 根据当前语言，获取显示值（英文显示用映射，中文直接用存储值）
+            if st.session_state.lang == "en":
+                display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
+                # 找到英文选项中的索引
+                try:
+                    dist_index = distributions_list.index(display_dist)
+                except ValueError:
+                    dist_index = 0
+            else:
+                display_dist = stored_dist
+                try:
+                    dist_index = distributions_list.index(display_dist)
+                except ValueError:
+                    dist_index = 0
+            dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
+            # 将用户选择的分布值转换回存储值（中文）
+            if st.session_state.lang == "en":
+                stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
+            else:
+                stored_dist_val = dist_val
         with cols[5]:
-            # 删除按钮：直接删除该行
             if st.button("🗑️", key=f"del_{idx}"):
                 st.session_state.params.drop(index=idx, inplace=True)
                 st.session_state.params.reset_index(drop=True, inplace=True)
@@ -1365,25 +1417,25 @@ def main():
                 st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
-        if dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")]:
-            if dist_val == t("dist_uniform") and "low" not in current_dist_params:
-                current_dist_params["low"] = mean_val - 3 * std_val
-                current_dist_params["high"] = mean_val + 3 * std_val
-            elif dist_val == t("dist_lognorm") and "mean_log" not in current_dist_params:
-                current_dist_params["mean_log"] = 0.0
-                current_dist_params["sigma_log"] = 1.0
-            elif dist_val == t("dist_weibull") and "shape" not in current_dist_params:
-                current_dist_params["shape"] = 1.0
-                current_dist_params["scale"] = 1.0
-            elif dist_val == t("dist_tri") and "left" not in current_dist_params:
-                current_dist_params["left"] = mean_val - 3 * std_val
-                current_dist_params["mode"] = mean_val
-                current_dist_params["right"] = mean_val + 3 * std_val
+        # 如果分布类型改变了，可能需要重新初始化分布参数
+        if stored_dist_val != stored_dist:
+            # 重新初始化默认参数
+            if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
+                current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
+            elif stored_dist_val == t("dist_lognorm") or stored_dist_val == "Log-normal":
+                current_dist_params = {"mean_log": 0.0, "sigma_log": 1.0}
+            elif stored_dist_val == t("dist_weibull") or stored_dist_val == "Weibull":
+                current_dist_params = {"shape": 1.0, "scale": 1.0}
+            elif stored_dist_val == t("dist_tri") or stored_dist_val == "Triangular":
+                current_dist_params = {"left": mean_val - 3 * std_val, "mode": mean_val, "right": mean_val + 3 * std_val}
+            else:
+                current_dist_params = {}
 
-        need_expand = dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")]
+        need_expand = stored_dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")] or \
+                      stored_dist_val in ["Uniform", "Log-normal", "Weibull", "Triangular"]
         if need_expand:
             with st.expander(t("configure").format(dist_val), expanded=True):
-                if dist_val == t("dist_uniform"):
+                if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                     low = st.number_input(t("uniform_low"), value=float(current_dist_params.get("low", mean_val - 3*std_val)), key=f"uniform_low_{idx}", step=0.1)
                     high = st.number_input(t("uniform_high"), value=float(current_dist_params.get("high", mean_val + 3*std_val)), key=f"uniform_high_{idx}", step=0.1)
                     if low >= high:
@@ -1391,7 +1443,7 @@ def main():
                     else:
                         current_dist_params["low"] = low
                         current_dist_params["high"] = high
-                elif dist_val == t("dist_lognorm"):
+                elif stored_dist_val == t("dist_lognorm") or stored_dist_val == "Log-normal":
                     mean_log = st.number_input(t("lognorm_meanlog"), value=float(current_dist_params.get("mean_log", 0.0)), key=f"lognorm_meanlog_{idx}", step=0.1)
                     sigma_log = st.number_input(t("lognorm_sigmalog"), value=float(current_dist_params.get("sigma_log", 1.0)), key=f"lognorm_sigmalog_{idx}", step=0.05, format="%.3f")
                     if sigma_log <= 0:
@@ -1399,7 +1451,7 @@ def main():
                     else:
                         current_dist_params["mean_log"] = mean_log
                         current_dist_params["sigma_log"] = sigma_log
-                elif dist_val == t("dist_weibull"):
+                elif stored_dist_val == t("dist_weibull") or stored_dist_val == "Weibull":
                     shape = st.number_input(t("weibull_shape"), value=float(current_dist_params.get("shape", 1.0)), key=f"weibull_shape_{idx}", step=0.1, min_value=0.1)
                     scale = st.number_input(t("weibull_scale"), value=float(current_dist_params.get("scale", 1.0)), key=f"weibull_scale_{idx}", step=0.1, min_value=0.1)
                     if shape <= 0 or scale <= 0:
@@ -1407,7 +1459,7 @@ def main():
                     else:
                         current_dist_params["shape"] = shape
                         current_dist_params["scale"] = scale
-                elif dist_val == t("dist_tri"):
+                elif stored_dist_val == t("dist_tri") or stored_dist_val == "Triangular":
                     left = st.number_input(t("tri_left"), value=float(current_dist_params.get("left", mean_val - 3*std_val)), key=f"tri_left_{idx}", step=0.1)
                     mode = st.number_input(t("tri_mode"), value=float(current_dist_params.get("mode", mean_val)), key=f"tri_mode_{idx}", step=0.1)
                     right = st.number_input(t("tri_right"), value=float(current_dist_params.get("right", mean_val + 3*std_val)), key=f"tri_right_{idx}", step=0.1)
@@ -1419,11 +1471,11 @@ def main():
                         current_dist_params["right"] = right
 
                 fig, ax = plt.subplots(figsize=(4, 2))
-                plot_pdf(dist_val, mean_val, std_val, current_dist_params, ax)
+                plot_pdf(stored_dist_val, mean_val, std_val, current_dist_params, ax)
                 st.pyplot(fig)
                 plt.close(fig)
 
-        rows_data.append((name, mean_val, std_val, dist_val, current_dist_params, letter))
+        rows_data.append((name, mean_val, std_val, stored_dist_val, current_dist_params, letter))
 
     # 更新参数表（编辑后的值）
     new_params = []
@@ -1440,11 +1492,18 @@ def main():
 
     # 添加行按钮
     if st.button(t("add_row"), use_container_width=True):
+        # 根据语言设置默认参数名称和分布
+        if st.session_state.lang == "zh":
+            default_name = "新参数"
+            default_dist = "正态分布（完整）"
+        else:
+            default_name = "New Parameter"
+            default_dist = "Normal (Full)"
         new_row = pd.DataFrame({
-            "参数名称": [t("new_param_default")],
+            "参数名称": [default_name],
             "均值(Typ)": [0.0],
             "标准差(Std)": [0.0],
-            "分布": [t("dist_full")],
+            "分布": [default_dist],
             "分布参数": [{}]
         })
         st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
@@ -1518,7 +1577,6 @@ def main():
                 mean_val = row["均值(Typ)"]
                 std_val = row["标准差(Std)"]
                 if param_name_val == "" or pd.isna(mean_val) or pd.isna(std_val):
-                    # 找到行号
                     idx = st.session_state.params[st.session_state.params["参数名称"] == param_name].index[0]
                     invalid_params.append((letter, idx+1))
             if invalid_params:
