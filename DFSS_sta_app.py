@@ -1,4 +1,4 @@
-# app.py - 最终修复版（修复英文界面下分布配置无法展开的问题）
+# app.py - 最终版（添加分布配置确定按钮）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -170,6 +170,7 @@ TEXTS = {
         "param_missing_for_letter": "公式中的字母 '{}' 对应的参数（行号 {}）缺少有效的参数名称、均值或标准差，请填写完整。",
         "letter_not_found": "公式中使用了未定义的字母 '{}'，请检查参数表格或修改公式。",
         "no_valid_params": "没有有效的参数（公式中的字母未在参数表中找到）。",
+        "confirm_button": "确定",
     },
     "en": {
         "title": "📊 Para_Variation - Monte Carlo Simulation",
@@ -317,6 +318,7 @@ TEXTS = {
         "param_missing_for_letter": "Parameter for letter '{}' (row {}) is missing valid name, mean, or std. Please complete it.",
         "letter_not_found": "Undefined letter '{}' used in formula. Please check parameter table or modify formula.",
         "no_valid_params": "No valid parameters (letters in formula not found in parameter table).",
+        "confirm_button": "OK",
     }
 }
 
@@ -1397,8 +1399,7 @@ def main():
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            stored_dist = row["分布"]  # 存储值始终为中文
-            # 显示值根据语言映射
+            stored_dist = row["分布"]
             if st.session_state.lang == "zh":
                 display_dist = stored_dist
             else:
@@ -1408,14 +1409,13 @@ def main():
             except ValueError:
                 dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
-            # 存储值始终为中文
             if st.session_state.lang == "zh":
                 stored_dist_val = dist_val
             else:
                 stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
         with cols[5]:
             if st.button("🗑️", key=f"del_{idx}"):
-                for key in [f"param_name_{idx}", f"param_mean_{idx}", f"param_std_{idx}", f"param_dist_{idx}"]:
+                for key in [f"param_name_{idx}", f"param_mean_{idx}", f"param_std_{idx}", f"param_dist_{idx}", f"expander_{idx}"]:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.session_state.params.drop(index=idx, inplace=True)
@@ -1424,7 +1424,6 @@ def main():
                 st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
-        # 如果分布类型改变了，重新初始化分布参数（基于存储的中文值）
         if stored_dist_val != stored_dist:
             if stored_dist_val == "均匀分布":
                 current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
@@ -1437,10 +1436,14 @@ def main():
             else:
                 current_dist_params = {}
 
-        # 判断是否需要 expander：直接基于存储的中文分布名称
         need_expand = stored_dist_val in ["均匀分布", "对数正态分布", "威布尔分布", "三角分布"]
+        # 管理 expander 展开状态，默认展开
+        expander_key = f"expander_{idx}"
+        if expander_key not in st.session_state:
+            st.session_state[expander_key] = True
+
         if need_expand:
-            with st.expander(t("configure").format(dist_val), expanded=True):
+            with st.expander(t("configure").format(dist_val), expanded=st.session_state[expander_key]):
                 if stored_dist_val == "均匀分布":
                     low = st.number_input(t("uniform_low"), value=float(current_dist_params.get("low", mean_val - 3*std_val)), key=f"uniform_low_{idx}", step=0.1)
                     high = st.number_input(t("uniform_high"), value=float(current_dist_params.get("high", mean_val + 3*std_val)), key=f"uniform_high_{idx}", step=0.1)
@@ -1481,6 +1484,11 @@ def main():
                 st.pyplot(fig)
                 plt.close(fig)
 
+                # 添加确定按钮，点击后关闭 expander
+                if st.button(t("confirm_button"), key=f"confirm_{idx}"):
+                    st.session_state[expander_key] = False
+                    st.rerun()
+
         rows_data.append((name, mean_val, std_val, stored_dist_val, current_dist_params, letter))
 
     new_params = []
@@ -1507,7 +1515,6 @@ def main():
             "分布参数": [{}]
         })
         st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
-        # 手动设置 session_state 中的输入框值，使新行立即显示正确语言
         st.session_state[f"param_name_{new_idx}"] = default_name
         display_dist = "正态分布（完整）" if st.session_state.lang == "zh" else "Normal (Full)"
         st.session_state[f"param_dist_{new_idx}"] = display_dist
@@ -1658,7 +1665,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
