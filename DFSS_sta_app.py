@@ -1,4 +1,4 @@
-# app.py - 最终版（全英文支持 + 智能参数检查 + 快速删除/添加）
+# app.py - 最终修复版（语言切换即时更新表格）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -330,7 +330,6 @@ DIST_TRANSLATION = {
     "威布尔分布": "Weibull",
     "三角分布": "Triangular",
 }
-# 反向映射
 DIST_TRANSLATION_REVERSE = {v: k for k, v in DIST_TRANSLATION.items()}
 
 # ==================== 初始化 Session State ====================
@@ -837,8 +836,7 @@ def get_distributions():
         ]
 
 def generate_sample(dist: str, mean: float, std: float, dist_params: Dict, size: int = 1) -> np.ndarray:
-    # 根据语言转换分布名称（存储的是中文，但传入的可能是英文显示值，需要转换为存储值）
-    # 为简化，我们直接根据 dist 字符串判断
+    # 根据语言转换分布名称（存储的是中文，但传入的可能是英文显示值）
     if "正态分布（完整）" in dist or "Normal (Full)" in dist:
         return np.random.normal(mean, std, size)
     elif "正态分布（正值）" in dist or "Normal (Positive only)" in dist:
@@ -1375,9 +1373,11 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            # 显示参数名称：如果是默认中文“新参数”且当前语言为英文，显示 "New Parameter"，否则显示存储值
+            # 显示参数名称：如果存储值为“新参数”或“New Parameter”，根据当前语言显示对应版本
             param_name_val = row["参数名称"]
-            if st.session_state.lang == "en" and param_name_val == "新参数":
+            if st.session_state.lang == "zh" and param_name_val == "New Parameter":
+                display_name = "新参数"
+            elif st.session_state.lang == "en" and param_name_val == "新参数":
                 display_name = "New Parameter"
             else:
                 display_name = param_name_val
@@ -1387,28 +1387,26 @@ def main():
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            # 获取存储的分布中文值
+            # 获取存储的分布值（始终为中文）
             stored_dist = row["分布"]
-            # 根据当前语言，获取显示值（英文显示用映射，中文直接用存储值）
-            if st.session_state.lang == "en":
-                display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
-                # 找到英文选项中的索引
-                try:
-                    dist_index = distributions_list.index(display_dist)
-                except ValueError:
-                    dist_index = 0
+            # 将存储的分布值标准化为当前语言对应的显示值，以便在下拉框中正确匹配
+            if st.session_state.lang == "zh":
+                # 如果存储的是英文（异常情况），转回中文
+                normalized_dist = DIST_TRANSLATION_REVERSE.get(stored_dist, stored_dist)
             else:
-                display_dist = stored_dist
-                try:
-                    dist_index = distributions_list.index(display_dist)
-                except ValueError:
-                    dist_index = 0
+                # 如果存储的是中文，转为英文
+                normalized_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
+            # 找到标准化后的值在列表中的索引
+            try:
+                dist_index = distributions_list.index(normalized_dist)
+            except ValueError:
+                dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
-            # 将用户选择的分布值转换回存储值（中文）
-            if st.session_state.lang == "en":
-                stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
+            # 用户选择后，存储的值应该始终为中文（通过反向映射）
+            if st.session_state.lang == "zh":
+                stored_dist_val = dist_val  # 中文直接存储
             else:
-                stored_dist_val = dist_val
+                stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
         with cols[5]:
             if st.button("🗑️", key=f"del_{idx}"):
                 st.session_state.params.drop(index=idx, inplace=True)
@@ -1419,7 +1417,6 @@ def main():
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
         # 如果分布类型改变了，可能需要重新初始化分布参数
         if stored_dist_val != stored_dist:
-            # 重新初始化默认参数
             if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                 current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
             elif stored_dist_val == t("dist_lognorm") or stored_dist_val == "Log-normal":
@@ -1434,6 +1431,7 @@ def main():
         need_expand = stored_dist_val in [t("dist_uniform"), t("dist_lognorm"), t("dist_weibull"), t("dist_tri")] or \
                       stored_dist_val in ["Uniform", "Log-normal", "Weibull", "Triangular"]
         if need_expand:
+            # 配置弹窗中的标签使用 t() 函数，已支持语言
             with st.expander(t("configure").format(dist_val), expanded=True):
                 if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                     low = st.number_input(t("uniform_low"), value=float(current_dist_params.get("low", mean_val - 3*std_val)), key=f"uniform_low_{idx}", step=0.1)
@@ -1492,7 +1490,6 @@ def main():
 
     # 添加行按钮
     if st.button(t("add_row"), use_container_width=True):
-        # 根据语言设置默认参数名称和分布
         if st.session_state.lang == "zh":
             default_name = "新参数"
             default_dist = "正态分布（完整）"
@@ -1664,7 +1661,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
