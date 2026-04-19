@@ -1,4 +1,4 @@
-# app.py - 最终修复版（语言切换时更新参数表中的默认名称）
+# app.py - 最终修复版（语言切换即时更新表格）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -372,16 +372,33 @@ if "payment_new_key" not in st.session_state:
 def t(key):
     return TEXTS[st.session_state.lang].get(key, key)
 
+def update_param_letters():
+    letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
+    st.session_state.param_letters = {
+        row["参数名称"]: letters[i] for i, row in st.session_state.params.iterrows()
+    }
+update_param_letters()
+
 def update_default_param_names_for_lang():
-    """当语言切换时，将参数名称中的默认值（'新参数' 或 'New Parameter'）统一更新为当前语言的默认名称"""
+    """当语言切换时，将参数名称中的默认值（'新参数' 或 'New Parameter'）统一更新为当前语言的默认名称，并同步 session_state"""
     target_name = "新参数" if st.session_state.lang == "zh" else "New Parameter"
-    # 遍历所有参数名称，如果当前值是 '新参数' 或 'New Parameter'，则替换为目标语言值
-    # 注意：用户可能已经将默认值改成了其他名字，那些不应被覆盖
     for idx, row in st.session_state.params.iterrows():
         current_name = row["参数名称"]
         if current_name == "新参数" or current_name == "New Parameter":
             st.session_state.params.at[idx, "参数名称"] = target_name
+            # 同步更新 session_state 中对应输入框的值
+            st.session_state[f"param_name_{idx}"] = target_name
     update_param_letters()
+
+def update_dist_display_for_lang():
+    """当语言切换时，将分布下拉框的 session_state 值更新为当前语言对应的显示值"""
+    for idx, row in st.session_state.params.iterrows():
+        stored_dist = row["分布"]
+        if st.session_state.lang == "zh":
+            display_dist = stored_dist
+        else:
+            display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
+        st.session_state[f"param_dist_{idx}"] = display_dist
 
 # ==================== 授权与试用数据管理 ====================
 USAGE_FILE = "usage_data.json"
@@ -761,13 +778,6 @@ def admin_settings_dialog():
             st.warning(t("no_keys"))
 
 # ==================== 蒙特卡洛模拟核心函数 ====================
-def update_param_letters():
-    letters = [chr(ord('A') + i) for i in range(len(st.session_state.params))]
-    st.session_state.param_letters = {
-        row["参数名称"]: letters[i] for i, row in st.session_state.params.iterrows()
-    }
-update_param_letters()
-
 def parse_limit(s: str) -> Optional[float]:
     if s is None or s.strip() == "":
         return None
@@ -1282,14 +1292,16 @@ def main():
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
         if st.button("中文", key="lang_zh", use_container_width=True):
             st.session_state.lang = "zh"
-            update_default_param_names_for_lang()  # 更新默认参数名称
+            update_default_param_names_for_lang()
+            update_dist_display_for_lang()
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     with col_en:
         st.markdown('<div class="lang-btn-wrap">', unsafe_allow_html=True)
         if st.button("English", key="lang_en", use_container_width=True):
             st.session_state.lang = "en"
-            update_default_param_names_for_lang()  # 更新默认参数名称
+            update_default_param_names_for_lang()
+            update_dist_display_for_lang()
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     with col_gear:
@@ -1376,37 +1388,50 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            # 直接显示存储的参数名称（语言切换时已经更新了默认值）
-            param_name_val = row["参数名称"]
-            name = st.text_input("", value=param_name_val, key=f"param_name_{idx}", label_visibility="collapsed")
+            # 使用 session_state 存储的值，确保语言切换后更新
+            if f"param_name_{idx}" in st.session_state:
+                name = st.text_input("", value=st.session_state[f"param_name_{idx}"], key=f"param_name_{idx}", label_visibility="collapsed")
+            else:
+                name = st.text_input("", value=row["参数名称"], key=f"param_name_{idx}", label_visibility="collapsed")
+                st.session_state[f"param_name_{idx}"] = row["参数名称"]
         with cols[2]:
             mean_val = st.number_input("", value=float(row["均值(Typ)"]), step=1.0, key=f"param_mean_{idx}", label_visibility="collapsed")
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            stored_dist = row["分布"]
-            if st.session_state.lang == "zh":
-                display_dist = stored_dist
+            # 使用 session_state 存储的显示值
+            if f"param_dist_{idx}" in st.session_state:
+                display_dist = st.session_state[f"param_dist_{idx}"]
             else:
-                display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
+                stored_dist = row["分布"]
+                if st.session_state.lang == "zh":
+                    display_dist = stored_dist
+                else:
+                    display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
+                st.session_state[f"param_dist_{idx}"] = display_dist
             try:
                 dist_index = distributions_list.index(display_dist)
             except ValueError:
                 dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
+            # 将用户选择的值转换回中文存储
             if st.session_state.lang == "zh":
                 stored_dist_val = dist_val
             else:
                 stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
         with cols[5]:
             if st.button("🗑️", key=f"del_{idx}"):
+                # 删除行时同时清理 session_state
+                for key in [f"param_name_{idx}", f"param_mean_{idx}", f"param_std_{idx}", f"param_dist_{idx}"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.session_state.params.drop(index=idx, inplace=True)
                 st.session_state.params.reset_index(drop=True, inplace=True)
                 update_param_letters()
                 st.rerun()
 
         current_dist_params = row.get("分布参数", {}) if isinstance(row.get("分布参数"), dict) else {}
-        if stored_dist_val != stored_dist:
+        if stored_dist_val != row["分布"]:
             if stored_dist_val == t("dist_uniform") or stored_dist_val == "Uniform":
                 current_dist_params = {"low": mean_val - 3 * std_val, "high": mean_val + 3 * std_val}
             elif stored_dist_val == t("dist_lognorm") or stored_dist_val == "Log-normal":
@@ -1477,8 +1502,9 @@ def main():
     st.session_state.params = pd.DataFrame(new_params)
     update_param_letters()
 
-    # 添加行按钮：默认参数名称固定为“新参数”，分布固定为“正态分布（完整）”
+    # 添加行按钮
     if st.button(t("add_row"), use_container_width=True):
+        new_idx = len(st.session_state.params)
         new_row = pd.DataFrame({
             "参数名称": ["新参数"],
             "均值(Typ)": [0.0],
@@ -1487,6 +1513,10 @@ def main():
             "分布参数": [{}]
         })
         st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
+        # 设置新行的 session_state 初始值
+        st.session_state[f"param_name_{new_idx}"] = "新参数"
+        display_dist = "正态分布（完整）" if st.session_state.lang == "zh" else "Normal (Full)"
+        st.session_state[f"param_dist_{new_idx}"] = display_dist
         update_param_letters()
         st.rerun()
 
@@ -1640,7 +1670,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></table>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
