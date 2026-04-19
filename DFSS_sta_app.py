@@ -1,4 +1,4 @@
-# app.py - 最终修复版（语言切换即时更新表格）
+# app.py - 最终修复版（添加行即时显示正确语言）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -386,7 +386,7 @@ def update_default_param_names_for_lang():
         current_name = row["参数名称"]
         if current_name == "新参数" or current_name == "New Parameter":
             st.session_state.params.at[idx, "参数名称"] = target_name
-            # 同时更新 session_state 中对应输入框的值（如果存在）
+            # 同步更新 session_state 中对应输入框的值
             key = f"param_name_{idx}"
             if key in st.session_state:
                 st.session_state[key] = target_name
@@ -1392,14 +1392,12 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            # 直接使用 st.text_input 自动管理 session_state
             name = st.text_input("", value=row["参数名称"], key=f"param_name_{idx}", label_visibility="collapsed")
         with cols[2]:
             mean_val = st.number_input("", value=float(row["均值(Typ)"]), step=1.0, key=f"param_mean_{idx}", label_visibility="collapsed")
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            # 获取存储的分布值，并根据语言显示
             stored_dist = row["分布"]
             if st.session_state.lang == "zh":
                 display_dist = stored_dist
@@ -1410,14 +1408,12 @@ def main():
             except ValueError:
                 dist_index = 0
             dist_val = st.selectbox("", distributions_list, index=dist_index, key=f"param_dist_{idx}", label_visibility="collapsed")
-            # 将用户选择的值转换回中文存储
             if st.session_state.lang == "zh":
                 stored_dist_val = dist_val
             else:
                 stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
         with cols[5]:
             if st.button("🗑️", key=f"del_{idx}"):
-                # 删除行时清理 session_state
                 for key in [f"param_name_{idx}", f"param_mean_{idx}", f"param_std_{idx}", f"param_dist_{idx}"]:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -1485,7 +1481,6 @@ def main():
 
         rows_data.append((name, mean_val, std_val, stored_dist_val, current_dist_params, letter))
 
-    # 更新参数表（编辑后的值）
     new_params = []
     for (name, mean_val, std_val, dist_val, dist_params, letter) in rows_data:
         new_params.append({
@@ -1498,18 +1493,22 @@ def main():
     st.session_state.params = pd.DataFrame(new_params)
     update_param_letters()
 
-    # 添加行按钮
+    # 添加行按钮：根据当前语言设置默认参数名称
     if st.button(t("add_row"), use_container_width=True):
+        default_name = "新参数" if st.session_state.lang == "zh" else "New Parameter"
         new_idx = len(st.session_state.params)
         new_row = pd.DataFrame({
-            "参数名称": ["新参数"],
+            "参数名称": [default_name],
             "均值(Typ)": [0.0],
             "标准差(Std)": [0.0],
             "分布": ["正态分布（完整）"],
             "分布参数": [{}]
         })
         st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
-        # 新行不需要手动设置 session_state，因为 st.text_input 会自动创建
+        # 手动设置 session_state 中的输入框值，使新行立即显示正确语言
+        st.session_state[f"param_name_{new_idx}"] = default_name
+        display_dist = "正态分布（完整）" if st.session_state.lang == "zh" else "Normal (Full)"
+        st.session_state[f"param_dist_{new_idx}"] = display_dist
         update_param_letters()
         st.rerun()
 
@@ -1524,7 +1523,6 @@ def main():
     st.session_state.formula = formula
     st.caption(t("formula_supported"))
 
-    # 设计值计算（使用过滤后的参数表，只考虑公式中出现的字母）
     filtered_params, filtered_letters = filter_params_by_formula(st.session_state.params, formula, st.session_state.param_letters)
     if len(filtered_params) > 0:
         design_val = compute_design_value(filtered_params, formula, filtered_letters)
@@ -1540,11 +1538,9 @@ def main():
     else:
         st.warning(t("formula_invalid"))
 
-    # 模拟按钮
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button(t("start_sim"), type="primary", use_container_width=True):
-            # 授权检查
             if not is_premium_user(st.session_state.current_report_key):
                 st.error(t("analyze_disabled"))
                 purchase_dialog()
@@ -1554,7 +1550,6 @@ def main():
                 purchase_dialog()
                 st.stop()
 
-            # ========== 智能参数有效性检查（只检查公式中出现的字母） ==========
             letters_in_formula = set(re.findall(r'\b([A-Za-z])\b', formula))
             letters_in_formula = {l.upper() for l in letters_in_formula}
             
@@ -1587,7 +1582,6 @@ def main():
             if not formula.strip():
                 st.error(t("formula_invalid"))
                 st.stop()
-            # ========== 结束参数检查 ==========
 
             filtered_params_for_sim, filtered_letters_for_sim = filter_params_by_formula(
                 st.session_state.params, formula, st.session_state.param_letters
@@ -1624,7 +1618,6 @@ def main():
                 "formula": formula,
             }
 
-    # 结果显示
     if st.session_state.sim_results_raw is not None:
         raw = st.session_state.sim_results_raw
         results = raw["results"]
@@ -1663,7 +1656,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></td>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
