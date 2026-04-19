@@ -380,14 +380,16 @@ def update_param_letters():
 update_param_letters()
 
 def update_default_param_names_for_lang():
-    """当语言切换时，将参数名称中的默认值（'新参数' 或 'New Parameter'）统一更新为当前语言的默认名称，并同步 session_state"""
+    """当语言切换时，将参数名称中的默认值（'新参数' 或 'New Parameter'）统一更新为当前语言的默认名称"""
     target_name = "新参数" if st.session_state.lang == "zh" else "New Parameter"
     for idx, row in st.session_state.params.iterrows():
         current_name = row["参数名称"]
         if current_name == "新参数" or current_name == "New Parameter":
             st.session_state.params.at[idx, "参数名称"] = target_name
-            # 同步更新 session_state 中对应输入框的值
-            st.session_state[f"param_name_{idx}"] = target_name
+            # 同时更新 session_state 中对应输入框的值（如果存在）
+            key = f"param_name_{idx}"
+            if key in st.session_state:
+                st.session_state[key] = target_name
     update_param_letters()
 
 def update_dist_display_for_lang():
@@ -398,7 +400,9 @@ def update_dist_display_for_lang():
             display_dist = stored_dist
         else:
             display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
-        st.session_state[f"param_dist_{idx}"] = display_dist
+        key = f"param_dist_{idx}"
+        if key in st.session_state:
+            st.session_state[key] = display_dist
 
 # ==================== 授权与试用数据管理 ====================
 USAGE_FILE = "usage_data.json"
@@ -1388,27 +1392,19 @@ def main():
         with cols[0]:
             st.markdown(f'<div class="param-letter">{letter}</div>', unsafe_allow_html=True)
         with cols[1]:
-            # 使用 session_state 存储的值，确保语言切换后更新
-            if f"param_name_{idx}" in st.session_state:
-                name = st.text_input("", value=st.session_state[f"param_name_{idx}"], key=f"param_name_{idx}", label_visibility="collapsed")
-            else:
-                name = st.text_input("", value=row["参数名称"], key=f"param_name_{idx}", label_visibility="collapsed")
-                st.session_state[f"param_name_{idx}"] = row["参数名称"]
+            # 直接使用 st.text_input 自动管理 session_state
+            name = st.text_input("", value=row["参数名称"], key=f"param_name_{idx}", label_visibility="collapsed")
         with cols[2]:
             mean_val = st.number_input("", value=float(row["均值(Typ)"]), step=1.0, key=f"param_mean_{idx}", label_visibility="collapsed")
         with cols[3]:
             std_val = st.number_input("", value=float(row["标准差(Std)"]), step=0.01, format="%.4f", key=f"param_std_{idx}", label_visibility="collapsed")
         with cols[4]:
-            # 使用 session_state 存储的显示值
-            if f"param_dist_{idx}" in st.session_state:
-                display_dist = st.session_state[f"param_dist_{idx}"]
+            # 获取存储的分布值，并根据语言显示
+            stored_dist = row["分布"]
+            if st.session_state.lang == "zh":
+                display_dist = stored_dist
             else:
-                stored_dist = row["分布"]
-                if st.session_state.lang == "zh":
-                    display_dist = stored_dist
-                else:
-                    display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
-                st.session_state[f"param_dist_{idx}"] = display_dist
+                display_dist = DIST_TRANSLATION.get(stored_dist, stored_dist)
             try:
                 dist_index = distributions_list.index(display_dist)
             except ValueError:
@@ -1421,7 +1417,7 @@ def main():
                 stored_dist_val = DIST_TRANSLATION_REVERSE.get(dist_val, dist_val)
         with cols[5]:
             if st.button("🗑️", key=f"del_{idx}"):
-                # 删除行时同时清理 session_state
+                # 删除行时清理 session_state
                 for key in [f"param_name_{idx}", f"param_mean_{idx}", f"param_std_{idx}", f"param_dist_{idx}"]:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -1513,10 +1509,7 @@ def main():
             "分布参数": [{}]
         })
         st.session_state.params = pd.concat([st.session_state.params, new_row], ignore_index=True)
-        # 设置新行的 session_state 初始值
-        st.session_state[f"param_name_{new_idx}"] = "新参数"
-        display_dist = "正态分布（完整）" if st.session_state.lang == "zh" else "Normal (Full)"
-        st.session_state[f"param_dist_{new_idx}"] = display_dist
+        # 新行不需要手动设置 session_state，因为 st.text_input 会自动创建
         update_param_letters()
         st.rerun()
 
@@ -1670,7 +1663,7 @@ def main():
                 def fmt(v): return f"{v:.2f}" if v is not None else "-"
                 st.markdown(f"""
                 <table class="ppm-table">
-                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th></table>
+                    <tr><th>CPK</th><th>Failure All</th><th>Failure Up</th><th>Failure Dn</th><tr>
                     <tr><td style="text-align:center">{fmt(cpk)}</td><td style="text-align:center">{fmt(failures_all)}</td><td style="text-align:center">{fmt(failures_up)}</td><td style="text-align:center">{fmt(failures_dn)}</td></tr>
                 </table>
                 """, unsafe_allow_html=True)
