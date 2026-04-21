@@ -6,3 +6,4 @@ scipy
 python-docx
 openpyxl
 stripe
+pyjwt>=2.8.0
